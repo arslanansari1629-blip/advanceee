@@ -1,0 +1,27 @@
+{
+  "name": "botforge-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BotForge Cloud — paste Python, we detect the requirements, install them and keep your Telegram bots online 24/7.",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^15.5.28",
+    "pg": "8.16.3",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.1.13",
+    "@types/node": "22.15.3",
+    "@types/pg": "8.15.5",
+    "@types/react": "19.1.10",
+    "@types/react-dom": "19.1.7",
+    "tailwindcss": "4.1.13",
+    "typescript": "5.9.2"
+  }
+}
