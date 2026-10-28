@@ -121,9 +121,9 @@ export default async function Landing() {
           Your Telegram bot goes live.
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-[15px] leading-relaxed text-slate-400">
-          BotForge reads your code, detects every library it needs, installs the requirements and keeps the
-          process online 24/7 — with live logs, one-click restarts and crash supervision. Host as many bots as
-          you want, free forever.
+          BotForge reads your handlers, detects every library you import, registers your Telegram webhook and
+          answers every message instantly — 24/7, with live logs and one-click control. No server, no runner.
+          Host as many bots as you want, free forever.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link href={user ? "/console/new" : "/login?mode=register"} className="btn btn-primary !px-5 !py-2.5 !text-sm">
@@ -149,13 +149,14 @@ export default async function Landing() {
             </span>
           </div>
           <div className="logs px-3 py-3 text-[12px]">
-            <p className="log-sys">› analysing main.py · 12 imports · 9 stdlib</p>
+            <p className="log-sys">› analysing main.py · 3 handlers · 2 imports</p>
             <p className="log-sys">› resolved requirements: python-telegram-bot&gt;=21.6 · python-dotenv</p>
-            <p className="log-sys">› pip install: 7 wheels from cache ✓</p>
-            <p className="log-out">2026-10-29 09:14:02 - telegram.ext.Application - INFO - Application started</p>
+            <p className="log-sys">› compiled behaviour: /start · /help · /price · echo</p>
             <p className="log-tg">getMe → @forge_echo_bot · ok (118 ms)</p>
-            <p className="log-out">handler: echo → replied &apos;hello bot&apos; (41 ms)</p>
-            <p className="log-sys">› healthcheck ok · supervisor armed · uptime 6d 04h</p>
+            <p className="log-tg">setWebhook → /api/tg/b_7f31… · registered</p>
+            <p className="log-out">update “/start” from @arslan (Arslan) · chat 771234567</p>
+            <p className="log-sys">engine · command /start</p>
+            <p className="log-out">reply → “Hey Arslan! I am live 24/7.” (41 ms)</p>
           </div>
         </div>
       </section>
@@ -211,7 +212,7 @@ export default async function Landing() {
               <IconCheck size={12} className="text-emerald-400" /> what you get
             </p>
             <ul className="mt-2 grid grid-cols-2 gap-1.5 text-[12px] text-slate-300">
-              {["Live log stream", "Stop / restart / redeploy", "Crash + exit-code capture", "Env var vault", "Unlimited bots", "Usage analytics"].map(
+              {["Live update logs", "Pause / restart / recompile", "Inline buttons & callbacks", "Env var vault", "Unlimited bots", "Fleet analytics"].map(
                 (x) => (
                   <li key={x} className="flex items-center gap-1.5">
                     <IconCheck size={11} className="text-emerald-400" /> {x}
