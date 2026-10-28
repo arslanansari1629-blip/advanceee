@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   if (await findByEmail(body.email)) return bad("An account with that email already exists", 409);
 
   const user = await createUser(body.email, body.password, body.name ?? "");
-  await createSession(user.id);
+  await createSession(user);
 
   // Kick things off with a real, deployable starter bot instead of an empty dashboard.
   const tpl = templateById("ptb-echo")!;
