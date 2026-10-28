@@ -634,3 +634,28 @@ export function parseRequirements(text: string): string[] {
 }
 
 export const STDLIB_MODULES = STDLIB;
+
+/**
+ * Pull command names out of the most common handler decorators/registrations.
+ * Used to make preview-mode logs reflect the code that was actually pasted.
+ */
+export function extractCommands(source: string): string[] {
+  const found = new Set<string>();
+  const patterns = [
+    /commands\s*=\s*\[([^\]]+)\]/g,              // telebot / ptb
+    /CommandHandler\(\s*[\"']([A-Za-z0-9_]+)[\"']/g,
+    /Command(?:s)?\(\s*[\"']([A-Za-z0-9_]+)[\"']/g, // aiogram Command("x")
+    /filters\.command\(\s*[\"']([A-Za-z0-9_]+)[\"']/g,
+    /handlers\.command\(\s*[\"']([A-Za-z0-9_]+)[\"']/g,
+  ];
+  for (const re of patterns) {
+    for (const m of source.matchAll(re)) {
+      const raw = m[1] ?? "";
+      for (const part of raw.split(/[,\s]+/)) {
+        const cmd = part.replace(/[\"']/g, "").trim();
+        if (/^[a-z0-9_]{2,24}$/i.test(cmd)) found.add(cmd);
+      }
+    }
+  }
+  return Array.from(found).slice(0, 12);
+}

@@ -7,7 +7,7 @@ import {
   saveBot,
   stopBot,
 } from "@/lib/bots";
-import { analyzeSource } from "@/lib/pyreqs";
+import { analyzeSource, extractCommands } from "@/lib/pyreqs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +60,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     bot.framework = analysis.framework;
     bot.frameworkId = analysis.frameworkId;
     bot.tokenMasked = analysis.tokenMasked;
+    bot.previewCommands = extractCommands(bot.files.map((f) => f.content).join("\n"));
     if (typeof body.requirements !== "string") bot.requirements = analysis.requirements;
   }
   if (typeof body.requirements === "string") bot.requirements = body.requirements;

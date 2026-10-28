@@ -65,6 +65,7 @@ export interface Bot extends BotFile {
     messagesProcessed: number;
   };
   previewSeed?: number;
+  previewCommands?: string[];
   previewSession?: number;
 }
 

@@ -183,6 +183,8 @@ export interface PreviewArgs {
   profile: string;
   seed: number;
   maskedToken: string | null;
+  commands?: string[];
+  entry?: string;
   requirements: string[];
   /** elapsed ms at which generation starts */
   fromElapsed: number;
@@ -198,6 +200,8 @@ export function previewBootLog(args: {
   profile: string;
   requirements: string[];
   maskedToken: string | null;
+  commands?: string[];
+  entry?: string;
   startSeq: number;
   startedAt: number;
 }): LogLine[] {
@@ -225,7 +229,19 @@ export function previewBootLog(args: {
   } else {
     push("system", "pip · no third-party requirements detected — stdlib only");
   }
-  push("system", `systemd · spawned entrypoint main.py · cgroup 0.5 vCPU / 512 MB`);
+  push(
+    "system",
+    `systemd · spawned entrypoint ${args.entry ?? "main.py"} · cgroup 0.5 vCPU / 512 MB`
+  );
+  if (args.commands?.length) {
+    push(
+      "system",
+      `handlers detected · ${args.commands
+        .slice(0, 8)
+        .map((c) => "/" + c)
+        .join(" ")}${args.commands.length > 8 ? ` (+${args.commands.length - 8} more)` : ""}`
+    );
+  }
   push("system", `telegram gateway · token ${args.maskedToken ?? "from env BOT_TOKEN"} verified`);
   for (const [stream, message] of p.startup(args.maskedToken)) push(stream, message);
   push("system", "healthcheck ok · bot is live · auto-restart armed");
@@ -254,8 +270,25 @@ export function previewStream(args: PreviewArgs): LogLine[] {
         ts,
       });
     } else if (r < 0.72) {
-      const [stream, message] = p.chatter[Math.floor(r * 97) % p.chatter.length];
-      out.push({ seq: seq++, stream, message, ts });
+      const cmds = args.commands ?? [];
+      if (cmds.length && step % 3 === 0) {
+        const cmd = cmds[Math.floor(step / 3) % cmds.length];
+        out.push({
+          seq: seq++,
+          stream: "telegram",
+          message: `update#${9000 + step} → /${cmd} from ${p.user}`,
+          ts,
+        });
+        out.push({
+          seq: seq++,
+          stream: "stdout",
+          message: `handler: ${cmd} → replied (${8 + Math.floor(r * 90)} ms)`,
+          ts: ts + 20,
+        });
+      } else {
+        const [stream, message] = p.chatter[Math.floor(r * 97) % p.chatter.length];
+        out.push({ seq: seq++, stream, message, ts });
+      }
     } else if (r > 0.985) {
       out.push({
         seq: seq++,

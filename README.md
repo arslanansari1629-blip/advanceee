@@ -1,5 +1,8 @@
 # BotForge Cloud
 
+**Live app:** https://botforge-cloud.vercel.app
+**Demo login:** `demo@botforge.dev` / `botforge123` (pre-loaded with 6 bots)
+
 **Paste Python → requirements detected → your Telegram bot runs 24/7.**
 
 BotForge is a hosting console for Python chat bots. You paste the whole file, it reads every

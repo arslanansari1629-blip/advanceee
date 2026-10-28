@@ -3,7 +3,7 @@
  * into a supervised, always-on process, on a real runner or in preview mode.
  */
 import { db, uid } from "./db";
-import { parseRequirements } from "./pyreqs";
+import { extractCommands, parseRequirements } from "./pyreqs";
 import { previewBootLog, previewStream, PREVIEW_STEP_MS } from "./preview";
 import { runnerFetch, runnerTarget } from "./runner";
 import type { Bot, BotEvent, LogLine, RunnerMode, User } from "./types";
@@ -136,6 +136,7 @@ export async function createBot(userId: string, input: DeployInput): Promise<Bot
     events: [],
     stats: { cpu: 0, memMB: 0, uptimePct: 100, messagesProcessed: 0 },
     previewSeed: 1 + Math.floor(Math.random() * 99_000),
+    previewCommands: extractCommands(input.files.map((f) => f.content).join("\n")),
   };
   addEvent(bot, "create", `Bot created · ${input.framework}`);
   await saveBot(bot);
@@ -206,6 +207,8 @@ export async function deployBot(user: User, bot: Bot, opts: { restart?: boolean 
     profile: bot.frameworkId ?? "generic",
     requirements: reqs,
     maskedToken: bot.tokenMasked,
+    commands: bot.previewCommands,
+    entry: bot.entry,
     startSeq: 1,
     startedAt: bot.startedAt!,
   });
@@ -302,6 +305,8 @@ export async function readLogs(user: User, bot: Bot, after = 0): Promise<LogPage
         profile: bot.frameworkId ?? "generic",
         seed: bot.previewSeed ?? 1,
         maskedToken: bot.tokenMasked,
+        commands: bot.previewCommands,
+        entry: bot.entry,
         requirements: parseRequirements(bot.requirements),
         fromElapsed: doc.genUntil,
         toElapsed: elapsed,

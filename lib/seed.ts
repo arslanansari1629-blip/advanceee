@@ -1,11 +1,11 @@
 import { createUser, findByEmail, hashPassword } from "./auth";
 import { db } from "./db";
 import { addEvent, previewStats } from "./bots";
-import { parseRequirements } from "./pyreqs";
+import { extractCommands, parseRequirements } from "./pyreqs";
 import { previewBootLog, previewStream, PREVIEW_STEP_MS } from "./preview";
 import type { Bot, LogLine } from "./types";
 
-const SEED_VERSION = 3;
+const SEED_VERSION = 4;
 export const DEMO_EMAIL = "demo@botforge.dev";
 export const DEMO_PASSWORD = "botforge123";
 
@@ -59,6 +59,7 @@ function mkBot(userId: string, s: SeedBot): Bot {
     events: [],
     stats: { cpu: 0, memMB: 0, uptimePct: 100, messagesProcessed: 0 },
     previewSeed: Number(s.id.replace(/\D/g, "").slice(-4) || 4242),
+    previewCommands: extractCommands((s.files ?? []).map((f) => f.content).join("\n")),
   };
 
   addEvent(bot, "create", "Bot created from template");
@@ -80,6 +81,8 @@ function buildLogs(bot: Bot, crash?: string[]): LogLine[] {
       profile: bot.frameworkId,
       requirements: bot.installed,
       maskedToken: bot.tokenMasked,
+      commands: bot.previewCommands,
+      entry: bot.entry,
       startSeq: 1,
       startedAt: bot.startedAt ?? Date.now() - 3_600_000,
     });
@@ -87,6 +90,8 @@ function buildLogs(bot: Bot, crash?: string[]): LogLine[] {
       profile: bot.frameworkId,
       seed: bot.previewSeed ?? 7,
       maskedToken: bot.tokenMasked,
+      commands: bot.previewCommands,
+      entry: bot.entry,
       requirements: bot.installed,
       fromElapsed: 0,
       toElapsed: 120_000,
@@ -115,6 +120,8 @@ function buildLogs(bot: Bot, crash?: string[]): LogLine[] {
     profile: bot.frameworkId,
     requirements: bot.installed,
     maskedToken: bot.tokenMasked,
+    commands: bot.previewCommands,
+    entry: bot.entry,
     startSeq: 1,
     startedAt: bot.startedAt,
   });
