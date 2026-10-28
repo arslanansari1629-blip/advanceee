@@ -12,11 +12,16 @@ export default function LogViewer({
   height = 420,
   onStatus,
   className,
+  endpoint,
+  readOnly = false,
 }: {
   botId: string;
   height?: number;
   onStatus?: (s: BotStatus) => void;
   className?: string;
+  /** override the log endpoint (operator console uses /api/admin/logs) */
+  endpoint?: string;
+  readOnly?: boolean;
 }) {
   const [lines, setLines] = useState<LogLine[]>([]);
   const [seq, setSeq] = useState(0);
@@ -34,7 +39,8 @@ export default function LogViewer({
   const poll = useCallback(async () => {
     if (pausedRef.current) return;
     try {
-      const res = await fetch(`/api/bots/${botId}/logs?after=${seqRef.current}`, { cache: "no-store" });
+      const base = endpoint ?? `/api/bots/${botId}/logs`;
+      const res = await fetch(`${base}?after=${seqRef.current}`, { cache: "no-store" });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "log stream failed");
       const data = await res.json();
       setError(null);
@@ -53,7 +59,7 @@ export default function LogViewer({
     } catch (err: any) {
       setError(err?.message ?? "log stream failed");
     }
-  }, [botId, onStatus]);
+  }, [botId, onStatus, endpoint]);
 
   useEffect(() => {
     seqRef.current = 0;
@@ -88,6 +94,7 @@ export default function LogViewer({
   };
 
   const clear = async () => {
+    if (readOnly) return;
     await fetch(`/api/bots/${botId}/logs`, { method: "DELETE" });
     setLines([]);
     seqRef.current = 0;
@@ -144,9 +151,11 @@ export default function LogViewer({
           <button className="btn btn-ghost !px-2 !py-1 !text-[11px]" onClick={download} title="Download logs">
             <IconDownload size={12} />
           </button>
-          <button className="btn btn-ghost !px-2 !py-1 !text-[11px]" onClick={clear} title="Clear buffer">
-            <IconTrash size={12} />
-          </button>
+          {!readOnly && (
+            <button className="btn btn-ghost !px-2 !py-1 !text-[11px]" onClick={clear} title="Clear buffer">
+              <IconTrash size={12} />
+            </button>
+          )}
         </div>
       </div>
 

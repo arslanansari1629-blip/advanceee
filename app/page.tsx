@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { currentUser } from "@/lib/auth";
+import NoticeBar from "@/components/NoticeBar";
+import { getPlatformSettings } from "@/lib/settings";
 import {
   IconActivity,
   IconBolt,
@@ -66,9 +68,20 @@ const mappings = [
 
 export default async function Landing() {
   const user = await currentUser();
+  const platform = await getPlatformSettings();
 
   return (
     <div className="relative mx-auto max-w-6xl px-5 pb-24">
+      {(platform.maintenance || platform.broadcast) && (
+        <div className="pt-4">
+          <NoticeBar
+            maintenance={platform.maintenance}
+            maintenanceMessage={platform.maintenanceMessage}
+            broadcast={platform.broadcast}
+          />
+        </div>
+      )}
+
       {/* nav */}
       <header className="flex items-center justify-between py-6">
         <div className="flex items-center gap-2.5">

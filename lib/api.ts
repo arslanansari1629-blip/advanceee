@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentUser } from "./auth";
 import type { User } from "./types";
+import { isAdmin } from "./admin";
 
 export const json = (data: unknown, status = 200) => NextResponse.json(data as any, { status });
 
@@ -27,4 +28,15 @@ export async function readJson<T = any>(req: Request): Promise<T | null> {
 
 export function validEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+}
+
+type AdminOk = { ok: true };
+type AdminFail = { ok: false; error: NextResponse };
+
+/** Guard for every /api/admin/* handler. */
+export async function adminOnly(): Promise<AdminOk | AdminFail> {
+  if (!(await isAdmin())) {
+    return { ok: false, error: bad("Operator session required", 401) };
+  }
+  return { ok: true };
 }

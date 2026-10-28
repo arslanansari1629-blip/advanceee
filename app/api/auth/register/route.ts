@@ -3,11 +3,15 @@ import { bad, json, readJson, validEmail } from "@/lib/api";
 import { createBot } from "@/lib/bots";
 import { analyzeSource } from "@/lib/pyreqs";
 import { templateById } from "@/lib/templates";
+import { getPlatformSettings } from "@/lib/settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  const platform = await getPlatformSettings();
+  if (!platform.signupsOpen) return bad("New registrations are temporarily closed.", 403);
+
   const body = await readJson<{ email?: string; password?: string; name?: string }>(req);
   if (!body?.email || !validEmail(body.email)) return bad("Enter a valid email address");
   if (!body.password || body.password.length < 6) return bad("Password must be at least 6 characters");

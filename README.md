@@ -22,6 +22,41 @@ Telethon, discord.py, OpenAI, pandas, OpenCV, yt-dlp, Playwright — anything `p
 
 ---
 
+## Operator console (hidden)
+
+There is a full-control admin panel at **`/admin`**. It is not linked from the public
+site, is excluded from search engines, and exposes nothing about its credentials
+anywhere in the UI.
+
+Set the credentials through environment variables:
+
+```bash
+ADMIN_USERNAME=...
+ADMIN_PASSWORD=...
+```
+
+- On hosted deployments (Vercel) both variables are **required** — without them the
+  panel stays locked (`configured: false`) instead of falling back to a guessable value.
+- Locally (`npm run dev` / `next start`) a development fallback is used so the panel works
+  out of the box.
+- Sessions are HMAC-signed, `httpOnly`, `SameSite=Strict` cookies that expire after 12 hours.
+- Failed attempts are throttled to 10 per IP per 5 minutes.
+
+### What an operator can do
+
+| Area | Control |
+| --- | --- |
+| Bots | start, stop, restart, redeploy, delete **any** bot on the platform |
+| Logs | stream live stdout/stderr of any bot, regardless of owner |
+| Accounts | change plan (free / pro / founder / **suspended**), delete an account with all its bots and logs |
+| Sign-in | suspended accounts are blocked immediately at login |
+| Platform | close registrations, toggle a site-wide maintenance banner, broadcast a message to every user |
+| Telemetry | accounts, bots, live/crashed counts, restarts, packages, fleet CPU/RSS, storage + runner status |
+
+Probe endpoint (booleans only): `GET /api/admin/session` → `{ configured, authed }`.
+
+---
+
 ## Quick start (local)
 
 ```bash
