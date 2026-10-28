@@ -40,8 +40,29 @@ interface TgUpdate {
   inline_query?: { id: string; query: string; from: { id: number; first_name?: string } };
 }
 
+/** Telegram needs parse_mode when the compiled reply contains HTML tags. */
+function parseModeFor(bot: Bot, text: string): "HTML" | "Markdown" | "MarkdownV2" | undefined {
+  if (bot.behaviour.parseMode) return bot.behaviour.parseMode;
+  if (/<\/?(?:b|strong|i|em|u|s|code|pre|a|tg-spoiler)\b[^>]*>/i.test(text)) return "HTML";
+  return undefined;
+}
+
 function escapeHtml(text: string) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Escape user-supplied values so HTML replies never break Telegram parsing. */
+function safeVars(vars: Record<string, string>, mode: string | undefined) {
+  if (mode !== "HTML") return vars;
+  return {
+    ...vars,
+    text: escapeHtml(vars.text ?? ""),
+    first_name: escapeHtml(vars.first_name ?? ""),
+    last_name: escapeHtml(vars.last_name ?? ""),
+    username: escapeHtml(vars.username ?? ""),
+    chat_title: escapeHtml(vars.chat_title ?? ""),
+    bot_name: escapeHtml(vars.bot_name ?? ""),
+  };
 }
 
 function varsFor(bot: Bot, update: TgUpdate, text: string, startedMs: number) {
@@ -125,13 +146,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ botId: string 
     const data = cq.data ?? "";
     const button = bot.behaviour.buttons.find((b) => b.data === data);
     const vars = varsFor(bot, update, data, started);
+    const cbMode = parseModeFor(bot, button?.reply ?? "✅ <b>{label}</b> selected.");
+    const cbVars = safeVars(vars, cbMode);
     const text = button?.reply
-      ? renderTemplate(button.reply, vars)
-      : renderTemplate("✅ <b>{label}</b> selected.", { ...vars, label: button?.label ?? data });
+      ? renderTemplate(button.reply, cbVars)
+      : renderTemplate("✅ <b>{label}</b> selected.", {
+          ...cbVars,
+          label: cbMode === "HTML" ? escapeHtml(button?.label ?? data) : button?.label ?? data,
+        });
 
     logs.push({ stream: "update", message: `callback “${data}” from ${vars.username} (chat ${vars.chat_id})` });
     await callTelegram(token, "answerCallbackQuery", { callback_query_id: cq.id, text: "✓" });
-    const sent = await sendMessage(token, vars.chat_id, text, bot.behaviour.parseMode ? { parse_mode: bot.behaviour.parseMode } : {});
+    const sent = await sendMessage(token, vars.chat_id, text, cbMode ? { parse_mode: cbMode } : {});
     replied = sent.ok;
     logs.push(
       sent.ok
@@ -202,9 +228,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ botId: string 
     return Response.json({ ok: true, replied: false });
   }
 
-  const rendered = renderTemplate(reply, vars);
+  const mode = parseModeFor(bot, reply);
+  const rendered = renderTemplate(reply, safeVars(vars, mode));
   const extra: Record<string, unknown> = {};
-  if (bot.behaviour.parseMode) extra.parse_mode = bot.behaviour.parseMode;
+  if (mode) extra.parse_mode = mode;
 
   // attach inline keyboard to /start when the code declared buttons
   const isStart = text.trim().toLowerCase().startsWith("/start");
