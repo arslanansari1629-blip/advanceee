@@ -1,0 +1,29 @@
+# Fly.io config for the BotForge runner.
+#   cd runner && fly launch --copy-config --name botforge-runner
+#   fly secrets set RUNNER_SECRET=<the secret from Console → Setup>
+#   fly deploy
+#   fly volumes create botforge_data --size 1
+app = "botforge-runner"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  BOTFORGE_DATA = "/data"
+  PORT = "8081"
+
+[http_service]
+  internal_port = 8081
+  force_https = true
+  auto_stop_machines = false   # keep bots online
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[[mounts]]
+  source = "botforge_data"
+  destination = "/data"

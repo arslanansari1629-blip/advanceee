@@ -97,3 +97,7 @@ export const IconGlobe = ({ size, ...p }: P) => (
 export const IconLock = ({ size, ...p }: P) => (
   <svg {...base(size)} {...p}><rect x="4" y="10" width="16" height="11" rx="2.5" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
 );
+
+export const IconRefresh = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}><path d="M21 12a9 9 0 1 1-3.1-6.8M21 3v6h-6" /></svg>
+);

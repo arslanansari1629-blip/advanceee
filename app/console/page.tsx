@@ -240,8 +240,8 @@ export default function ConsoleOverview() {
           tone="warn"
           title="Preview mode — no runner attached"
           action={
-            <Link href="/console/settings" className="btn !py-1 !text-[11.5px]">
-              Attach runner
+            <Link href="/console/setup" className="btn !py-1 !text-[11.5px]">
+              Run the 4-step setup
             </Link>
           }
         >
@@ -364,8 +364,8 @@ export default function ConsoleOverview() {
                 <span className="mono text-slate-300">{data.storage}</span>
               </div>
             </div>
-            <Link href="/console/settings" className="btn mt-3 w-full !py-1.5 !text-[11.5px]">
-              Manage runner
+            <Link href="/console/setup" className="btn mt-3 w-full !py-1.5 !text-[11.5px]">
+              Host 24/7 setup
             </Link>
           </div>
 

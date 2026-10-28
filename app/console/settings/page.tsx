@@ -66,6 +66,15 @@ export default function Settings() {
         </p>
       </div>
 
+      <div className="glass flex flex-wrap items-center gap-3 border-cyan-400/20 p-3">
+        <p className="text-[12px] text-slate-300">
+          First time? The guided setup generates your secret and gives you a one-command install.
+        </p>
+        <a href="/console/setup" className="btn btn-primary ml-auto !py-1.5 !text-[11.5px]">
+          Open setup guide
+        </a>
+      </div>
+
       <div className="glass p-4">
         <div className="flex flex-wrap items-center gap-2">
           <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">

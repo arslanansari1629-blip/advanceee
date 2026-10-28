@@ -1,0 +1,28 @@
+# Deploys the BotForge runner (the process supervisor) to Render.
+# The dashboard itself lives on Vercel; this service is what keeps Python
+# bots alive 24/7.
+#
+# Render → New → Blueprint → pick the arslansansari…/advanceee repo.
+# Then set RUNNER_SECRET in the dashboard (Environment → sync: false).
+services:
+  - type: web
+    name: botforge-runner
+    runtime: docker
+    dockerfilePath: ./runner/Dockerfile
+    dockerContext: ./runner
+    healthCheckPath: /health
+    # NOTE: the free instance type sleeps when idle, which stops your bots.
+    # Use at least the "starter" plan for genuine 24/7 hosting.
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: RUNNER_SECRET
+        sync: false
+      - key: BOTFORGE_DATA
+        value: /data
+      - key: PORT
+        value: 8081
+    disk:
+      name: botforge-data
+      mountPath: /data
+      sizeGB: 1

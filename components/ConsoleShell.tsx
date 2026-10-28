@@ -24,6 +24,7 @@ const nav = [
   { href: "/console", label: "Overview", icon: IconGrid },
   { href: "/console/new", label: "Deploy bot", icon: IconPlus },
   { href: "/console/settings", label: "Runner & settings", icon: IconSettings },
+  { href: "/console/setup", label: "Host 24/7 setup", icon: IconBolt },
 ];
 
 export default function ConsoleShell({ children }: { children: React.ReactNode }) {
@@ -112,8 +113,8 @@ export default function ConsoleShell({ children }: { children: React.ReactNode }
             {runner?.connected ? `${runner.latencyMs ?? 0} ms · ${me?.runnerUrl ?? "platform runner"}` : "attach a runner for real processes"}
           </p>
           {!runner?.connected && (
-            <Link href="/console/settings" className="mt-2 block text-[10.5px] font-semibold text-cyan-300 hover:underline">
-              Attach runner →
+            <Link href="/console/setup" className="mt-2 block text-[10.5px] font-semibold text-cyan-300 hover:underline">
+              Run the setup guide →
             </Link>
           )}
         </div>
@@ -165,6 +166,8 @@ export default function ConsoleShell({ children }: { children: React.ReactNode }
                 ? "deploy"
                 : pathname.startsWith("/console/bots")
                 ? "bot detail"
+                : pathname.startsWith("/console/setup")
+                ? "host 24/7"
                 : "settings"}
             </span>
           </div>
