@@ -1,77 +1,98 @@
 // Shared types for BotForge Cloud
 
-export type BotStatus =
-  | "running"
-  | "stopped"
-  | "starting"
-  | "installing"
-  | "crashed"
-  | "queued";
-
-export type RunnerMode = "runner" | "preview";
+/** live = webhook registered and answering · draft = no token yet · paused = webhook removed */
+export type BotStatus = "live" | "draft" | "paused" | "deploying" | "error";
 
 export interface BotFile {
   path: string;
   content: string;
 }
 
+export type BotEventType =
+  | "create"
+  | "deploy"
+  | "start"
+  | "stop"
+  | "restart"
+  | "error"
+  | "edit"
+  | "delete"
+  | "note";
+
 export interface BotEvent {
   id: string;
-  type:
-    | "create"
-    | "deploy"
-    | "start"
-    | "stop"
-    | "restart"
-    | "crash"
-    | "install"
-    | "edit"
-    | "delete"
-    | "note";
+  type: BotEventType;
   message: string;
   ts: number;
 }
 
-export interface Bot extends BotFile {
+/** One compiled command of the running bot program. */
+export interface BehaviourCommand {
+  cmd: string;
+  reply: string;
+  /** where the reply came from: user code or the engine */
+  source: "code" | "engine";
+}
+
+/** The executable behaviour compiled from the pasted Python. */
+export interface Behaviour {
+  commands: BehaviourCommand[];
+  echo: string | null;
+  fallback: string | null;
+  parseMode: "HTML" | "Markdown" | "MarkdownV2" | null;
+  buttons: { label: string; data: string; reply: string }[];
+  notes: string[];
+}
+
+export interface TelegramState {
+  username: string | null;
+  botId: number | null;
+  firstName: string | null;
+  webhookUrl: string | null;
+  webhookOk: boolean;
+  pendingUpdates: number;
+  lastError: string | null;
+  lastSyncAt: number | null;
+  lastUpdateAt: number | null;
+  updates: number;
+  replies: number;
+  errors: number;
+}
+
+export interface Bot {
   id: string;
   userId: string;
   name: string;
+  path: string;
+  content: string;
   entry: string;
   files: BotFile[];
   requirements: string;
   env: Record<string, string>;
   status: BotStatus;
-  desired: "running" | "stopped";
-  installed: string[];
-  installLog: string;
-  installState: "idle" | "installing" | "installed" | "failed";
-  restartCount: number;
-  autoRestart: boolean;
-  crashLoop: boolean;
-  lastError: string | null;
+  desired: "live" | "paused";
   tokenMasked: string | null;
+  /** AES-GCM encrypted bot token — server only, never serialised to the client */
+  tokenEnc: string | null;
+  webhookSecret: string | null;
   framework: string;
   frameworkId: string;
-  mode: RunnerMode;
+  behaviour: Behaviour;
+  telegram: TelegramState;
+  autoRestart: boolean;
+  restartCount: number;
+  lastError: string | null;
   startedAt: number | null;
   stoppedAt: number | null;
   createdAt: number;
   updatedAt: number;
   events: BotEvent[];
-  stats: {
-    cpu: number;
-    memMB: number;
-    uptimePct: number;
-    messagesProcessed: number;
-  };
-  previewSeed?: number;
-  previewCommands?: string[];
-  previewSession?: number;
+  stats: { uptimePct: number; cpu: number; memMB: number };
 }
 
 export interface LogLine {
   seq: number;
-  stream: "stdout" | "stderr" | "system" | "telegram";
+  stream: "update" | "reply" | "system" | "error" | "telegram";
   message: string;
   ts: number;
 }
@@ -82,8 +103,6 @@ export interface User {
   name: string;
   passHash: string;
   createdAt: number;
-  runnerUrl?: string;
-  runnerSecret?: string;
   plan: string;
 }
 
@@ -114,18 +133,4 @@ export interface Analysis {
   notes: string[];
   stats: { lines: number; chars: number; imports: number; stdlib: number };
   localImports: string[];
-}
-
-export interface RunnerInfo {
-  connected: boolean;
-  url: string | null;
-  mode: RunnerMode;
-  version?: string;
-  python?: string;
-  running?: number;
-  capacity?: number;
-  cpu?: number;
-  memMB?: number;
-  latencyMs?: number;
-  error?: string;
 }

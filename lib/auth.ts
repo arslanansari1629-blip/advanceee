@@ -148,7 +148,6 @@ export function publicUser(user: User) {
     email: user.email,
     name: user.name,
     plan: user.plan,
-    hasRunner: Boolean(user.runnerUrl),
     createdAt: user.createdAt,
   };
 }

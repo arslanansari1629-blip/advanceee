@@ -1,7 +1,5 @@
 import { adminOnly, bad, json } from "@/lib/api";
 import { getBot, readLogs } from "@/lib/bots";
-import { db } from "@/lib/db";
-import type { User } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,30 +17,18 @@ export async function GET(req: Request) {
   const bot = await getBot(botId);
   if (!bot) return bad("Bot not found", 404);
 
-  let owner = (await db.get("users", bot.userId)) as unknown as User | null;
-  if (!owner) {
-    owner = {
-      id: bot.userId,
-      email: "orphaned@local",
-      name: "Orphaned",
-      passHash: "",
-      createdAt: Date.now(),
-      plan: "unlimited-free",
-    };
-  }
-
-  const page = await readLogs(owner, bot, after);
+  const page = await readLogs(bot, after);
   return json({
     ...page,
     bot: {
       id: bot.id,
       name: bot.name,
       status: bot.status,
-      mode: bot.mode,
+      username: bot.telegram?.username ?? null,
       framework: bot.framework,
       startedAt: bot.startedAt,
       restartCount: bot.restartCount,
-      installed: bot.installed,
+      installed: bot.requirements.split("\n").filter(Boolean),
     },
   });
 }

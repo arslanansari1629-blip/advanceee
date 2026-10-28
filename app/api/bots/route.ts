@@ -1,15 +1,23 @@
 import { authed, bad, json, readJson } from "@/lib/api";
-import { createBot, deployBot, listBots, refreshStatuses } from "@/lib/bots";
-import { analyzeSource, maskToken, parseRequirements } from "@/lib/pyreqs";
+import {
+  createBot,
+  goLive,
+  listBots,
+  publicBot,
+  refreshStatuses,
+  tokenFromSource,
+} from "@/lib/bots";
+import { analyzeSource } from "@/lib/pyreqs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET() {
   const a = await authed();
   if (!a.user) return a.error;
-  const bots = await refreshStatuses(a.user, await listBots(a.user.id));
-  return json({ bots });
+  const bots = await refreshStatuses(await listBots(a.user.id));
+  return json({ bots: bots.map(publicBot) });
 }
 
 interface CreateBody {
@@ -18,7 +26,6 @@ interface CreateBody {
   files?: { path: string; content: string }[];
   requirements?: string;
   env?: Record<string, string>;
-  autoRestart?: boolean;
   deploy?: boolean;
 }
 
@@ -39,20 +46,26 @@ export async function POST(req: Request) {
       ? body.requirements
       : analysis.requirements;
 
-  const token = analysis.tokens[0] ?? null;
+  const env = body?.env ?? {};
+  const token =
+    env.BOT_TOKEN?.trim() ||
+    env.TOKEN?.trim() ||
+    analysis.tokens[0] ||
+    tokenFromSource(source) ||
+    null;
+
   const bot = await createBot(a.user.id, {
     name: (body?.name || "untitled-bot").slice(0, 48),
     entry,
     files,
     requirements,
-    env: body?.env ?? {},
-    autoRestart: body?.autoRestart ?? true,
+    env,
     framework: analysis.framework,
     frameworkId: analysis.frameworkId,
-    tokenMasked: token ? analysis.tokenMasked ?? maskToken(token) : null,
+    token,
   });
 
-  if (body?.deploy) await deployBot(a.user, bot);
+  if (body?.deploy) await goLive(a.user, bot);
 
-  return json({ bot, analysis, requirements: parseRequirements(requirements) });
+  return json({ bot: publicBot(bot), analysis });
 }

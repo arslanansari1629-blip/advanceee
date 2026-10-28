@@ -1,223 +1,73 @@
-import { createUser, findByEmail, hashPassword } from "./auth";
+import { findUserByEmail, createUser } from "./auth-internal";
 import { db } from "./db";
-import { addEvent, previewStats } from "./bots";
-import { extractCommands, parseRequirements } from "./pyreqs";
-import { previewBootLog, previewStream, PREVIEW_STEP_MS } from "./preview";
-import type { Bot, LogLine } from "./types";
+import { addEvent, putLogDoc, saveBot } from "./bots";
+import { compileBehaviour } from "./behavior";
+import { parseRequirements } from "./pyreqs";
+import { seal } from "./telegram";
+import { TEMPLATES } from "./templates";
+import type { Bot } from "./types";
 
-const SEED_VERSION = 4;
+const SEED_VERSION = 8;
 export const DEMO_EMAIL = "demo@botforge.dev";
 export const DEMO_PASSWORD = "botforge123";
 
-interface SeedBot {
+/**
+ * The demo workspace ships with real bot *code* and real compiled behaviour.
+ * Nothing is simulated: bots without a token sit in DRAFT, and a bot with the
+ * demo's fake token shows the genuine error Telegram returns.
+ */
+interface SeedSpec {
   id: string;
-  name: string;
   template: string;
-  framework: string;
-  frameworkId: string;
-  requirements: string;
+  name: string;
   status: Bot["status"];
-  startedMinutesAgo: number;
-  restartCount: number;
-  entry?: string;
-  files?: { path: string; content: string }[];
-  env?: Record<string, string>;
-  tokenMasked?: string;
-  crash?: string[];
+  token?: string;
+  createdAtMinutesAgo: number;
+  events?: Array<{ type: Bot["events"][number]["type"]; message: string; minutesAgo: number }>;
+  telegram?: Partial<Bot["telegram"]>;
 }
 
-function mkBot(userId: string, s: SeedBot): Bot {
-  const now = Date.now();
-  const startedAt = s.startedMinutesAgo ? now - s.startedMinutesAgo * 60_000 : null;
-  const bot: Bot = {
-    id: s.id,
-    userId,
-    name: s.name,
-    path: s.entry ?? "main.py",
-    content: s.files?.[0]?.content ?? "",
-    entry: s.entry ?? "main.py",
-    files: s.files ?? [{ path: "main.py", content: "" }],
-    requirements: s.requirements,
-    env: s.env ?? { BOT_TOKEN: "" },
-    status: s.status,
-    desired: s.status === "running" ? "running" : "stopped",
-    installed: parseRequirements(s.requirements),
-    installLog: "",
-    installState: "installed",
-    restartCount: s.restartCount,
-    autoRestart: true,
-    crashLoop: false,
-    lastError: s.crash ? s.crash[s.crash.length - 1] : null,
-    tokenMasked: s.tokenMasked ?? "7712345678:AAHx••••••9fQ",
-    framework: s.framework,
-    frameworkId: s.frameworkId,
-    mode: "preview",
-    startedAt,
-    stoppedAt: s.status === "running" ? null : now - 1000 * 60 * 12,
-    createdAt: now - (s.startedMinutesAgo + 90) * 60_000,
-    updatedAt: now,
-    events: [],
-    stats: { cpu: 0, memMB: 0, uptimePct: 100, messagesProcessed: 0 },
-    previewSeed: Number(s.id.replace(/\D/g, "").slice(-4) || 4242),
-    previewCommands: extractCommands((s.files ?? []).map((f) => f.content).join("\n")),
-  };
-
-  addEvent(bot, "create", "Bot created from template");
-  addEvent(bot, "install", `pip install completed · ${bot.installed.length} packages`);
-  addEvent(bot, "deploy", `Deployed · ${s.framework}`);
-  if (s.status === "running") addEvent(bot, "start", "Supervisor armed · 24/7 keepalive");
-  if (s.status === "stopped") addEvent(bot, "stop", "Stopped by user");
-  if (s.status === "crashed") {
-    addEvent(bot, "crash", "Process exited with code 1 — traceback captured");
-    if (s.restartCount > 0) addEvent(bot, "restart", `Auto-restart attempt #${s.restartCount}`);
-  }
-  bot.stats = { ...bot.stats, ...previewStats(bot) };
-  return bot;
-}
-
-function buildLogs(bot: Bot, crash?: string[]): LogLine[] {
-  if (bot.status !== "running" || !bot.startedAt) {
-    const boot = previewBootLog({
-      profile: bot.frameworkId,
-      requirements: bot.installed,
-      maskedToken: bot.tokenMasked,
-      commands: bot.previewCommands,
-      entry: bot.entry,
-      startSeq: 1,
-      startedAt: bot.startedAt ?? Date.now() - 3_600_000,
-    });
-    const tail = previewStream({
-      profile: bot.frameworkId,
-      seed: bot.previewSeed ?? 7,
-      maskedToken: bot.tokenMasked,
-      commands: bot.previewCommands,
-      entry: bot.entry,
-      requirements: bot.installed,
-      fromElapsed: 0,
-      toElapsed: 120_000,
-      startSeq: boot.length + 1,
-      startedAt: bot.startedAt ?? Date.now() - 3_600_000,
-    });
-    const lines = [...boot, ...tail];
-    if (crash) {
-      let seq = lines.length + 1;
-      const t = Date.now() - 9000;
-      crash.forEach((message, i) =>
-        lines.push({ seq: seq++, stream: "stderr", message, ts: t + i * 40 })
-      );
-      lines.push({
-        seq: seq++,
-        stream: "system",
-        message: "supervisor · process exited (code 1) · auto-restart disabled after 3 crashes in 60s",
-        ts: Date.now() - 8000,
-      });
-    }
-    return lines;
-  }
-
-  const elapsed = Date.now() - bot.startedAt;
-  const boot = previewBootLog({
-    profile: bot.frameworkId,
-    requirements: bot.installed,
-    maskedToken: bot.tokenMasked,
-    commands: bot.previewCommands,
-    entry: bot.entry,
-    startSeq: 1,
-    startedAt: bot.startedAt,
-  });
-  const from = Math.max(0, elapsed - 130_000);
-  const stream = previewStream({
-    profile: bot.frameworkId,
-    seed: bot.previewSeed ?? 7,
-    maskedToken: bot.tokenMasked,
-    requirements: bot.installed,
-    fromElapsed: Math.floor(from / PREVIEW_STEP_MS) * PREVIEW_STEP_MS,
-    toElapsed: elapsed,
-    startSeq: boot.length + 1,
-    startedAt: bot.startedAt,
-  });
-  return [...boot, ...stream].slice(-320);
-}
-
-const SEED_BOTS: SeedBot[] = [
+const SPECS: SeedSpec[] = [
   {
     id: "seed-echo-01",
-    name: "echo-bot",
     template: "ptb-echo",
-    framework: "python-telegram-bot v21+ (asyncio Application API)",
-    frameworkId: "ptb-v21",
-    requirements: "python-telegram-bot>=21.6\npython-dotenv",
-    status: "running",
-    startedMinutesAgo: 612,
-    restartCount: 1,
-  },
-  {
-    id: "seed-support-02",
-    name: "support-desk",
-    template: "telebot-simple",
-    framework: "pyTelegramBotAPI (telebot)",
-    frameworkId: "telebot",
-    requirements: "pyTelegramBotAPI>=4.24\npython-dotenv",
-    status: "running",
-    startedMinutesAgo: 187,
-    restartCount: 0,
-  },
-  {
-    id: "seed-shop-03",
-    name: "cafe-orders",
-    template: "aiogram-shop",
-    framework: "aiogram v3",
-    frameworkId: "aiogram-v3",
-    requirements: "aiogram>=3.15\naiosqlite",
-    status: "running",
-    startedMinutesAgo: 43,
-    restartCount: 2,
-  },
-  {
-    id: "seed-mirror-04",
-    name: "channel-mirror",
-    template: "pyrogram-userbot",
-    framework: "Pyrogram (MTProto userbot)",
-    frameworkId: "pyrogram",
-    requirements: "pyrogram>=2.0.106\nTgCrypto",
-    status: "stopped",
-    startedMinutesAgo: 0,
-    restartCount: 1,
-    env: { API_ID: "", API_HASH: "", SESSION_STRING: "" },
-    tokenMasked: "MTProto · api_id hidden",
-  },
-  {
-    id: "seed-legacy-05",
-    name: "legacy-shop",
-    template: "telebot-simple",
-    framework: "python-telegram-bot v13 (legacy Updater API)",
-    frameworkId: "ptb-v13",
-    requirements: "python-telegram-bot==13.15",
-    status: "crashed",
-    startedMinutesAgo: 9,
-    restartCount: 3,
-    crash: [
-      "Traceback (most recent call last):",
-      '  File "/work/main.py", line 14, in <module>',
-      "    from telegram.ext import Updater, CommandHandler",
-      "ImportError: cannot import name 'Updater' from 'telegram.ext'",
-      "",
-      "hint: this script targets python-telegram-bot 12.x",
-      "hint: BotForge pinned python-telegram-bot==13.15 — remove the manual pin in requirements.txt",
+    name: "echo-bot",
+    status: "draft",
+    createdAtMinutesAgo: 620,
+    events: [
+      { type: "create", message: "Bot created from template", minutesAgo: 620 },
+      { type: "note", message: "Add your bot token to go live — webhook mode needs no server", minutesAgo: 610 },
     ],
   },
   {
-    id: "seed-worker-06",
-    name: "price-worker",
-    template: "worker",
-    framework: "Plain Python",
-    frameworkId: "generic",
-    requirements: "requests",
-    status: "running",
-    startedMinutesAgo: 1440,
-    restartCount: 0,
-    env: { INTERVAL: "60" },
-    tokenMasked: null as unknown as string,
+    id: "seed-support-02",
+    template: "telebot-simple",
+    name: "support-desk",
+    status: "draft",
+    createdAtMinutesAgo: 300,
+    events: [{ type: "create", message: "Bot created from template", minutesAgo: 300 }],
+  },
+  {
+    id: "seed-shop-03",
+    template: "aiogram-shop",
+    name: "cafe-orders",
+    status: "error",
+    // a syntactically valid but non-existent token: Telegram really rejects it
+    token: "7712345678:AAHfakeTokenForDemoPurposesOnly_0000000",
+    createdAtMinutesAgo: 120,
+    events: [
+      { type: "create", message: "Bot created from template", minutesAgo: 120 },
+      { type: "error", message: "Telegram rejected the token: Unauthorized", minutesAgo: 118 },
+    ],
+    telegram: { lastError: "Unauthorized", errors: 1 },
+  },
+  {
+    id: "seed-menu-04",
+    template: "telebot-buttons",
+    name: "menu-bot",
+    status: "draft",
+    createdAtMinutesAgo: 90,
+    events: [{ type: "create", message: "Bot created · pyTelegramBotAPI inline menu", minutesAgo: 90 }],
   },
 ];
 
@@ -232,33 +82,100 @@ async function doSeed() {
   const meta = await db.get("meta", "seed");
   if (meta && (meta.version as number) >= SEED_VERSION) return;
 
-  let user = await findByEmail(DEMO_EMAIL);
-  if (!user) {
-    user = await createUser(DEMO_EMAIL, DEMO_PASSWORD, "Arslan Ansari");
-    user.plan = "founder";
-    await db.put("users", user.id, user as unknown as Record<string, unknown>);
+  const user = await createUser(DEMO_EMAIL, DEMO_PASSWORD, "Arslan Ansari", "founder");
+
+  // Drop demo bots from older seed revisions so the workspace matches the
+  // webhook model exactly (no leftover runner-era "running"/"crashed" rows).
+  const wanted = new Set(SPECS.map((s) => s.id));
+  for (const bot of (await db.all("bots")) as unknown as Bot[]) {
+    if (bot.id.startsWith("seed-") && !wanted.has(bot.id)) {
+      await db.del("bots", bot.id);
+      await db.del("logs", bot.id);
+    }
   }
 
-  const { TEMPLATES } = await import("./templates");
-
-  for (const spec of SEED_BOTS) {
+  for (const spec of SPECS) {
     const tpl = TEMPLATES.find((t) => t.id === spec.template);
-    spec.files = [
-      { path: "main.py", content: tpl?.code ?? "# worker\nprint('hello')\n" },
-    ];
-    const bot = mkBot(user.id, spec);
-    await db.put("bots", bot.id, bot as unknown as Record<string, unknown>);
-    const lines = buildLogs(bot, spec.crash);
-    await db.put("logs", bot.id, {
-      id: bot.id,
-      lines,
-      nextSeq: lines.length + 1,
-      genUntil: bot.status === "running" && bot.startedAt ? Date.now() - bot.startedAt : 0,
-    } as unknown as Record<string, unknown>);
+    const source = tpl?.code ?? "# empty\nprint('hi')\n";
+    const createdAt = Date.now() - spec.createdAtMinutesAgo * 60_000;
+    const token = spec.token ?? null;
+
+    const bot: Bot = {
+      id: spec.id,
+      userId: user.id,
+      name: spec.name,
+      path: "main.py",
+      content: source,
+      entry: "main.py",
+      files: [{ path: "main.py", content: source }],
+      requirements: tpl?.requirements ?? parseRequirements("python-dotenv").join("\n"),
+      env: token ? { BOT_TOKEN: "" } : { BOT_TOKEN: "" },
+      status: spec.status,
+      desired: "live",
+      tokenMasked: token ? `7712345678:AAHf${"•".repeat(6)}000` : null,
+      tokenEnc: token ? seal(token) : null,
+      webhookSecret: null,
+      framework: tpl?.framework ?? "Plain Python",
+      frameworkId: "generic",
+      behaviour: compileBehaviour(source),
+      telegram: {
+        username: null,
+        botId: null,
+        firstName: null,
+        webhookUrl: null,
+        webhookOk: false,
+        pendingUpdates: 0,
+        lastError: null,
+        lastSyncAt: null,
+        lastUpdateAt: null,
+        updates: 0,
+        replies: 0,
+        errors: 0,
+        ...spec.telegram,
+      },
+      autoRestart: true,
+      restartCount: 0,
+      lastError: spec.telegram?.lastError ?? null,
+      startedAt: null,
+      stoppedAt: spec.status === "draft" ? null : createdAt + 60_000,
+      createdAt,
+      updatedAt: createdAt,
+      events: [],
+      stats: { uptimePct: spec.status === "live" ? 100 : 0, cpu: 0, memMB: 0 },
+    };
+
+    for (const e of (spec.events ?? []).slice().reverse()) {
+      addEvent(bot, e.type, e.message);
+      bot.events[0].ts = Date.now() - e.minutesAgo * 60_000;
+    }
+
+    await saveBot(bot);
+    const logs =
+      spec.status === "error"
+        ? [
+            { seq: 1, stream: "system" as const, message: "getMe → api.telegram.org", ts: createdAt },
+            { seq: 2, stream: "error" as const, message: "getMe failed · Unauthorized", ts: createdAt + 500 },
+            { seq: 3, stream: "system" as const, message: "check the token in @BotFather → API Token", ts: createdAt + 600 },
+          ]
+        : [
+            { seq: 1, stream: "system" as const, message: "bot saved as draft", ts: createdAt },
+            {
+              seq: 2,
+              stream: "system" as const,
+              message: `${bot.behaviour.commands.length} command(s) compiled from your code · waiting for a bot token`,
+              ts: createdAt + 200,
+            },
+            {
+              seq: 3,
+              stream: "system" as const,
+              message: "add BOT_TOKEN and press Deploy — the webhook goes live instantly, no server needed",
+              ts: createdAt + 400,
+            },
+          ];
+    await putLogDoc({ id: bot.id, lines: logs, nextSeq: logs.length + 1 });
   }
 
   await db.put("meta", "seed", { id: "seed", version: SEED_VERSION, at: Date.now() });
 }
 
 export const seedCredentials = { email: DEMO_EMAIL, password: DEMO_PASSWORD };
-export { hashPassword };

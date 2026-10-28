@@ -14,21 +14,20 @@ export async function GET(req: Request, ctx: Ctx) {
   if (!bot || bot.userId !== a.user.id) return bad("Bot not found", 404);
 
   const after = Number(new URL(req.url).searchParams.get("after") ?? 0) || 0;
-  const page = await readLogs(a.user, bot, after);
+  const page = await readLogs(bot, after);
 
   return json({
     ...page,
     bot: {
       id: bot.id,
       status: bot.status,
-      mode: bot.mode,
-      startedAt: bot.startedAt,
-      restartCount: bot.restartCount,
-      autoRestart: bot.autoRestart,
+      username: bot.telegram.username,
+      updates: bot.telegram.updates,
+      replies: bot.telegram.replies,
+      errors: bot.telegram.errors,
+      pendingUpdates: bot.telegram.pendingUpdates,
+      lastUpdateAt: bot.telegram.lastUpdateAt,
       lastError: bot.lastError,
-      installState: bot.installState,
-      installed: bot.installed,
-      stats: bot.stats,
     },
   });
 }

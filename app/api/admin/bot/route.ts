@@ -1,13 +1,5 @@
 import { adminOnly, bad, json, readJson } from "@/lib/api";
-import {
-  addEvent,
-  deleteBot,
-  deployBot,
-  getBot,
-  restartBot,
-  saveBot,
-  stopBot,
-} from "@/lib/bots";
+import { addEvent, deleteBot, getBot, goLive, pauseBot, restartBot, saveBot } from "@/lib/bots";
 import { db } from "@/lib/db";
 import type { User } from "@/lib/types";
 
@@ -53,10 +45,10 @@ async function handleAction(owner: User, botId: string, action: string) {
     case "start":
       addEvent(bot, "note", "Started by operator");
       await saveBot(bot);
-      await deployBot(owner, bot);
+      await goLive(owner, bot);
       break;
     case "stop":
-      await stopBot(owner, bot, "Stopped by operator");
+      await pauseBot(owner, bot, "Paused by operator");
       break;
     case "restart":
       addEvent(bot, "note", "Restart issued by operator");
@@ -67,12 +59,11 @@ async function handleAction(owner: User, botId: string, action: string) {
       bot.restartCount += 1;
       addEvent(bot, "note", "Redeploy issued by operator");
       await saveBot(bot);
-      await deployBot(owner, bot, { restart: true });
+      await goLive(owner, bot, { restart: true });
       break;
     }
     case "delete":
-      if (bot.status === "running") await stopBot(owner, bot, "Deleted by operator");
-      await deleteBot(bot.id);
+      await deleteBot(bot);
       return json({ ok: true, deleted: true });
     default:
       return bad("Unknown action");

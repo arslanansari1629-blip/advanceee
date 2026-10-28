@@ -25,7 +25,7 @@ export default function LogViewer({
 }) {
   const [lines, setLines] = useState<LogLine[]>([]);
   const [seq, setSeq] = useState(0);
-  const [status, setStatus] = useState<BotStatus>("stopped");
+  const [status, setStatus] = useState<BotStatus>("draft");
   const [follow, setFollow] = useState(true);
   const [paused, setPaused] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
@@ -103,10 +103,11 @@ export default function LogViewer({
 
   const filters: { id: Filter; label: string }[] = [
     { id: "all", label: `All ${lines.length}` },
-    { id: "telegram", label: "Gateway" },
-    { id: "stdout", label: "stdout" },
-    { id: "stderr", label: "stderr" },
-    { id: "system", label: "system" },
+    { id: "update", label: "Updates" },
+    { id: "reply", label: "Replies" },
+    { id: "telegram", label: "Telegram" },
+    { id: "system", label: "System" },
+    { id: "error", label: "Errors" },
   ];
 
   return (
@@ -118,14 +119,14 @@ export default function LogViewer({
         <span
           className={cx(
             "pill !text-[10px]",
-            status === "running"
+            status === "live"
               ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-              : status === "crashed"
+              : status === "error"
               ? "border-rose-400/30 bg-rose-400/10 text-rose-300"
               : "border-white/10 text-slate-400"
           )}
         >
-          <span className={cx("dot", status === "running" ? "dot-live" : status === "crashed" ? "dot-err" : "dot-idle")} />
+          <span className={cx("dot", status === "live" ? "dot-live" : status === "error" ? "dot-err" : "dot-idle")} />
           {status}
         </span>
         <span className="mono text-[10.5px] text-slate-500">#{seq}</span>
@@ -198,7 +199,7 @@ export default function LogViewer({
                 <span className={streamClass(l.stream)}>{l.message}</span>
               </div>
             ))}
-            {status === "running" && !paused && (
+            {status === "live" && !paused && (
               <div className="log-row opacity-60">
                 <span className="log-ts" />
                 <span />

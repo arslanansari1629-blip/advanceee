@@ -1,32 +1,52 @@
 /**
- * Bot service layer — the single place that knows how to turn a pasted script
- * into a supervised, always-on process, on a real runner or in preview mode.
+ * Bot service layer — webhook engine edition.
+ *
+ * Registering with Telegram (setWebhook) is what makes a bot "deployed": from
+ * that moment Telegram pushes every update to our serverless endpoint, which
+ * answers instantly. No process, no runner, no VPS — the bot is online 24/7 by
+ * construction, and Telegram retries updates if an instance is cold.
  */
+import crypto from "node:crypto";
 import { db, uid } from "./db";
-import { extractCommands, parseRequirements } from "./pyreqs";
-import { previewBootLog, previewStream, PREVIEW_STEP_MS } from "./preview";
-import { runnerFetch, runnerTarget } from "./runner";
-import type { Bot, BotEvent, LogLine, RunnerMode, User } from "./types";
+import { compileBehaviour } from "./behavior";
+import { parseRequirements } from "./pyreqs";
+import {
+  deleteWebhook,
+  getMe,
+  getWebhookInfo,
+  maskToken,
+  open,
+  seal,
+  setWebhook,
+  webhookUrl,
+  isValidToken,
+} from "./telegram";
+import type { Bot, BotEvent, BotStatus, LogLine, User } from "./types";
 
-type EventType = BotEvent["type"];
-
-const LOG_CAP = 800;
+const LOG_CAP = 600;
 
 export interface LogDoc {
   id: string;
   lines: LogLine[];
   nextSeq: number;
-  genUntil: number;
 }
 
 export const asBot = (doc: Record<string, unknown> | null): Bot | null =>
   (doc as unknown as Bot) ?? null;
 
+/** Strip everything the browser must never see. */
+export function publicBot(bot: Bot) {
+  const { tokenEnc, webhookSecret, ...rest } = bot;
+  return {
+    ...rest,
+    hasToken: Boolean(tokenEnc),
+    webhookUrl: bot.telegram?.webhookUrl ?? null,
+  };
+}
+
 export async function listBots(userId: string): Promise<Bot[]> {
   const all = (await db.all("bots")) as unknown as Bot[];
-  return all
-    .filter((b) => b.userId === userId)
-    .sort((a, b) => b.createdAt - a.createdAt);
+  return all.filter((b) => b.userId === userId).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function getBot(id: string): Promise<Bot | null> {
@@ -39,57 +59,53 @@ export async function saveBot(bot: Bot): Promise<Bot> {
   return bot;
 }
 
-export function addEvent(bot: Bot, type: EventType, message: string) {
-  bot.events = [
-    { id: uid("e_"), type, message, ts: Date.now() },
-    ...(bot.events ?? []),
-  ].slice(0, 60);
+export function addEvent(bot: Bot, type: BotEvent["type"], message: string) {
+  bot.events = [{ id: uid("e_"), type, message, ts: Date.now() }, ...(bot.events ?? [])].slice(0, 60);
 }
 
 /* ------------------------------------------------------------------ logs */
 
 export async function getLogDoc(botId: string): Promise<LogDoc> {
   const doc = (await db.get("logs", botId)) as unknown as LogDoc | null;
-  return doc ?? { id: botId, lines: [], nextSeq: 1, genUntil: 0 };
+  return doc ?? { id: botId, lines: [], nextSeq: 1 };
 }
 
-async function putLogDoc(doc: LogDoc) {
+export async function putLogDoc(doc: LogDoc) {
   if (doc.lines.length > LOG_CAP) doc.lines = doc.lines.slice(-LOG_CAP);
   await db.put("logs", doc.id, doc as unknown as Record<string, unknown>);
 }
 
-export async function appendSystemLog(botId: string, message: string, stream: LogLine["stream"] = "system") {
+export async function appendLog(
+  botId: string,
+  stream: LogLine["stream"],
+  message: string,
+  ts = Date.now()
+) {
   const doc = await getLogDoc(botId);
-  doc.lines.push({ seq: doc.nextSeq++, stream, message, ts: Date.now() });
+  doc.lines.push({ seq: doc.nextSeq++, stream, message, ts });
+  await putLogDoc(doc);
+}
+
+export async function appendLogs(botId: string, entries: Array<Pick<LogLine, "stream" | "message">>) {
+  const doc = await getLogDoc(botId);
+  for (const e of entries) {
+    doc.lines.push({ seq: doc.nextSeq++, stream: e.stream, message: e.message, ts: Date.now() });
+  }
   await putLogDoc(doc);
 }
 
 export async function clearLogs(botId: string) {
   const doc = await getLogDoc(botId);
-  await putLogDoc({ ...doc, lines: [], genUntil: 0, nextSeq: doc.nextSeq + 1 });
+  await putLogDoc({ id: botId, lines: [], nextSeq: doc.nextSeq + 1 });
 }
 
-/* -------------------------------------------------------------- profiles */
-
-export function previewStats(bot: Bot) {
-  const now = Date.now();
-  if (bot.status !== "running" || !bot.startedAt) {
-    return { cpu: 0, memMB: 0, uptimePct: bot.stats?.uptimePct ?? 100 };
-  }
-  const slot = Math.floor(now / 60_000) + (bot.id.charCodeAt(1) || 7);
-  const p1 = Math.abs(Math.sin(slot * 1.7)) * 6 + 1.2;
-  const p2 = 42 + Math.abs(Math.cos(slot * 0.9)) * 26;
-  const uptimeMs = now - bot.startedAt;
-  const crashes = bot.events?.filter((e) => e.type === "crash").length ?? 0;
-  const up = crashes === 0 ? 100 : Math.max(90, 100 - crashes * 1.4);
-  return {
-    cpu: Number(p1.toFixed(2)),
-    memMB: Number(p2.toFixed(1)),
-    uptimePct: Number((uptimeMs > 0 ? up : 100).toFixed(2)),
-  };
+export async function readLogs(bot: Bot, after = 0) {
+  const doc = await getLogDoc(bot.id);
+  const lines = doc.lines.filter((l) => l.seq > after).slice(-400);
+  return { lines, nextSeq: doc.nextSeq - 1, status: bot.status, generated: lines.length };
 }
 
-/* --------------------------------------------------------------- deploy */
+/* --------------------------------------------------------------- create */
 
 export interface DeployInput {
   name: string;
@@ -97,150 +113,186 @@ export interface DeployInput {
   files: { path: string; content: string }[];
   requirements: string;
   env: Record<string, string>;
-  autoRestart: boolean;
   framework: string;
   frameworkId: string;
-  tokenMasked: string | null;
-  existing?: Bot;
+  token?: string | null;
 }
 
 export async function createBot(userId: string, input: DeployInput): Promise<Bot> {
   const now = Date.now();
+  const source =
+    input.files.find((f) => f.path === input.entry)?.content ?? input.files[0]?.content ?? "";
+  const behaviour = compileBehaviour(source);
+  const token = input.token?.trim() || null;
+
   const bot: Bot = {
     id: uid("b_"),
     userId,
     name: input.name || "untitled-bot",
     path: input.entry,
-    content: input.files.find((f) => f.path === input.entry)?.content ?? input.files[0]?.content ?? "",
+    content: source,
     entry: input.entry,
     files: input.files,
     requirements: input.requirements,
     env: input.env,
-    status: "stopped",
-    desired: "stopped",
-    installed: [],
-    installLog: "",
-    installState: "idle",
-    restartCount: 0,
-    autoRestart: input.autoRestart,
-    crashLoop: false,
-    lastError: null,
-    tokenMasked: input.tokenMasked,
+    status: "draft",
+    desired: "live",
+    tokenMasked: token ? maskToken(token) : null,
+    tokenEnc: token ? seal(token) : null,
+    webhookSecret: null,
     framework: input.framework,
-    frameworkId: input.frameworkId ?? "generic",
-    mode: "preview",
+    frameworkId: input.frameworkId,
+    behaviour,
+    telegram: {
+      username: null,
+      botId: null,
+      firstName: null,
+      webhookUrl: null,
+      webhookOk: false,
+      pendingUpdates: 0,
+      lastError: null,
+      lastSyncAt: null,
+      lastUpdateAt: null,
+      updates: 0,
+      replies: 0,
+      errors: 0,
+    },
+    autoRestart: true,
+    restartCount: 0,
+    lastError: null,
     startedAt: null,
     stoppedAt: null,
     createdAt: now,
     updatedAt: now,
     events: [],
-    stats: { cpu: 0, memMB: 0, uptimePct: 100, messagesProcessed: 0 },
-    previewSeed: 1 + Math.floor(Math.random() * 99_000),
-    previewCommands: extractCommands(input.files.map((f) => f.content).join("\n")),
+    stats: { uptimePct: 100, cpu: 0, memMB: 0 },
   };
+
   addEvent(bot, "create", `Bot created · ${input.framework}`);
   await saveBot(bot);
   return bot;
 }
 
-/** Boot the bot: on a real runner when one is attached, otherwise preview. */
-export async function deployBot(user: User, bot: Bot, opts: { restart?: boolean } = {}): Promise<Bot> {
-  const target = runnerTarget(user);
-  const reqs = parseRequirements(bot.requirements);
-  bot.mode = target.url ? "runner" : "preview";
+/* ------------------------------------------------------------ lifecycle */
 
-  bot.status = "installing";
-  bot.installState = "installing";
-  bot.lastError = null;
-  bot.crashLoop = false;
-  bot.desired = "running";
-  bot.startedAt = Date.now();
-  bot.stoppedAt = null;
-  bot.installed = reqs;
-  addEvent(bot, opts.restart ? "restart" : "deploy", `Deploy started · ${reqs.length} requirement(s) · ${bot.mode} mode`);
-  await saveBot(bot);
+/** Extract a token the user hard-coded in the source (fallback). */
+export function tokenFromSource(source: string): string | null {
+  const m = source.match(/\b(\d{8,12}:[A-Za-z0-9_-]{30,45})\b/);
+  return m ? m[1] : null;
+}
 
-  if (target.url) {
-    try {
-      const res = await runnerFetch<any>(
-        target,
-        "/bots",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            id: bot.id,
-            name: bot.name,
-            files: bot.files,
-            entry: bot.entry,
-            requirements: bot.requirements,
-            env: bot.env,
-            autoRestart: bot.autoRestart,
-            restart: Boolean(opts.restart),
-          }),
-        },
-        25_000
-      );
-      // The runner installs asynchronously; the log poller promotes this to
-      // "running" as soon as the process is actually alive.
-      bot.status = res?.status === "running" ? "running" : "installing";
-      bot.installState = bot.status === "running" ? "installed" : "installing";
-      bot.installLog = res?.installLog ?? "";
-      bot.installed = res?.installed ?? reqs;
-      addEvent(bot, "install", `requirements dispatched to runner · ${reqs.length} package(s)`);
-      if (bot.status === "running") addEvent(bot, "start", "Process spawned on runner · 24/7 supervision armed");
-      await saveBot(bot);
-      return bot;
-    } catch (err: any) {
-      bot.status = "crashed";
-      bot.installState = "failed";
-      bot.lastError = err?.message ?? "runner unreachable";
-      addEvent(bot, "crash", `Runner error: ${bot.lastError}`);
-      await saveBot(bot);
-      await appendSystemLog(bot.id, `runner error: ${bot.lastError}`, "stderr");
-      return bot;
-    }
+export async function goLive(user: User, bot: Bot, opts: { restart?: boolean } = {}): Promise<Bot> {
+  const token =
+    (bot.tokenEnc ? open(bot.tokenEnc) : null) ||
+    bot.env?.BOT_TOKEN?.trim() ||
+    bot.env?.TOKEN?.trim() ||
+    tokenFromSource(bot.content) ||
+    "";
+
+  if (!token) {
+    bot.status = "draft";
+    bot.lastError = "Add your bot token (from @BotFather) to go live.";
+    addEvent(bot, "error", bot.lastError);
+    await saveBot(bot);
+    return bot;
+  }
+  if (!isValidToken(token)) {
+    bot.status = "error";
+    bot.lastError = "That does not look like a bot token (expected 123456789:AA…)";
+    addEvent(bot, "error", bot.lastError);
+    await saveBot(bot);
+    return bot;
   }
 
-  // ---- preview mode: deterministic, clearly labelled simulated gateway
-  bot.installState = "installed";
-  const boot = previewBootLog({
-    profile: bot.frameworkId ?? "generic",
-    requirements: reqs,
-    maskedToken: bot.tokenMasked,
-    commands: bot.previewCommands,
-    entry: bot.entry,
-    startSeq: 1,
-    startedAt: bot.startedAt!,
-  });
-  const logDoc: LogDoc = {
-    id: bot.id,
-    lines: boot,
-    nextSeq: boot.length + 1,
-    genUntil: 0,
-  };
-  await putLogDoc(logDoc);
-  bot.status = "running";
-  addEvent(bot, "install", `pip install completed · ${reqs.length} packages resolved from cache`);
-  addEvent(bot, "start", "Bot is live · supervised poller attached");
+  bot.status = "deploying";
+  bot.desired = "live";
+  bot.tokenEnc = seal(token);
+  bot.tokenMasked = maskToken(token);
   await saveBot(bot);
+
+  // 1. who am I?
+  const me = await getMe(token);
+  if (!me.ok || !me.result) {
+    bot.status = "error";
+    bot.lastError = `Telegram rejected the token: ${me.description ?? "unauthorised"}`;
+    bot.telegram.lastError = bot.lastError;
+    addEvent(bot, "error", bot.lastError);
+    await saveBot(bot);
+    await appendLogs(bot.id, [
+      { stream: "error", message: `getMe failed · ${me.description ?? "unauthorised"}` },
+      { stream: "system", message: "check the token in BotFather → API Token" },
+    ]);
+    return bot;
+  }
+
+  bot.telegram.botId = me.result.id;
+  bot.telegram.username = me.result.username ?? null;
+  bot.telegram.firstName = me.result.first_name ?? null;
+
+  // 2. webhook + secret
+  const secret = bot.webhookSecret ?? crypto.randomBytes(24).toString("base64url");
+  bot.webhookSecret = secret;
+  const url = webhookUrl(bot.id, bot.tokenEnc);
+
+  const hook = await setWebhook(token, url, secret);
+  const info = await getWebhookInfo(token);
+
+  if (!hook.ok) {
+    bot.status = "error";
+    bot.lastError = `setWebhook failed: ${hook.description ?? "unknown error"}`;
+    bot.telegram.lastError = bot.lastError;
+    addEvent(bot, "error", bot.lastError);
+    await saveBot(bot);
+    await appendLogs(bot.id, [{ stream: "error", message: bot.lastError }]);
+    return bot;
+  }
+
+  bot.telegram.webhookUrl = info.result?.url ?? url;
+  bot.telegram.webhookOk = Boolean(info.result?.url);
+  bot.telegram.pendingUpdates = info.result?.pending_update_count ?? 0;
+  bot.telegram.lastError = info.result?.last_error_message ?? null;
+  bot.telegram.lastSyncAt = Date.now();
+  bot.status = "live";
+  bot.lastError = null;
+  bot.startedAt = bot.startedAt ?? Date.now();
+  bot.stoppedAt = null;
+  if (opts.restart) bot.restartCount += 1;
+
+  addEvent(
+    bot,
+    opts.restart ? "restart" : "deploy",
+    `Webhook registered · @${bot.telegram.username ?? bot.telegram.botId} is live`
+  );
+  await saveBot(bot);
+
+  const cmds = bot.behaviour.commands.filter((c) => c.source === "code").map((c) => "/" + c.cmd);
+  await appendLogs(bot.id, [
+    { stream: "system", message: `getMe → @${bot.telegram.username ?? bot.telegram.botId} (id ${bot.telegram.botId})` },
+    { stream: "system", message: `setWebhook → ${url.replace(/\?d=[^&]+/, "?d=•••")}` },
+    { stream: "system", message: `webhook ok · pending updates: ${bot.telegram.pendingUpdates}` },
+    {
+      stream: "system",
+      message: cmds.length
+        ? `compiled handlers · ${cmds.join(" ")}`
+        : `no user handlers found · engine commands registered (${bot.behaviour.commands.map((c) => "/" + c.cmd).join(" ")})`,
+    },
+    { stream: "system", message: `engine armed · 24/7 webhook mode · send a message to the bot now` },
+  ]);
+
   return bot;
 }
 
-export async function stopBot(user: User, bot: Bot, reason = "Stopped by user"): Promise<Bot> {
-  const target = runnerTarget(user);
-  bot.desired = "stopped";
+export async function pauseBot(user: User, bot: Bot, reason = "Paused by user"): Promise<Bot> {
+  const token = bot.tokenEnc ? open(bot.tokenEnc) : null;
+  if (token) await deleteWebhook(token);
+  bot.status = "paused";
+  bot.desired = "paused";
   bot.stoppedAt = Date.now();
-  if (target.url && bot.mode === "runner") {
-    try {
-      await runnerFetch(target, `/bots/${bot.id}/stop`, { method: "POST" }, 10_000);
-    } catch {
-      /* runner may already be gone — status below is still correct */
-    }
-  }
-  bot.status = "stopped";
   addEvent(bot, "stop", reason);
   await saveBot(bot);
-  await appendSystemLog(bot.id, `process stopped · ${reason}`);
+  await appendLogs(bot.id, [
+    { stream: "system", message: `deleteWebhook · telegram will stop delivering updates` },
+  ]);
   return bot;
 }
 
@@ -248,104 +300,101 @@ export async function restartBot(user: User, bot: Bot): Promise<Bot> {
   bot.restartCount += 1;
   addEvent(bot, "restart", `Manual restart #${bot.restartCount}`);
   await saveBot(bot);
-  return deployBot(user, bot, { restart: true });
+  return goLive(user, bot, { restart: true });
 }
 
-export async function deleteBot(botId: string) {
-  await db.del("bots", botId);
-  await db.del("logs", botId);
+export async function deleteBot(bot: Bot) {
+  const token = bot.tokenEnc ? open(bot.tokenEnc) : null;
+  if (token) await deleteWebhook(token);
+  await db.del("bots", bot.id);
+  await db.del("logs", bot.id);
 }
 
-/* ------------------------------------------------------------- log reads */
+/** Ask Telegram for the current webhook health (throttled to 30s). */
+export async function syncTelegram(bot: Bot, force = false): Promise<Bot> {
+  if (!bot.tokenEnc) return bot;
+  const last = bot.telegram?.lastSyncAt ?? 0;
+  if (!force && Date.now() - last < 30_000) return bot;
+  const token = open(bot.tokenEnc);
+  if (!token) return bot;
 
-export interface LogPage {
-  lines: LogLine[];
-  nextSeq: number;
-  status: Bot["status"];
-  generated: number;
+  const info = await getWebhookInfo(token);
+  bot.telegram.lastSyncAt = Date.now();
+  if (!info.ok || !info.result) {
+    bot.telegram.lastError = info.description ?? "telegram unreachable";
+    if (bot.status === "live") bot.status = "error";
+    bot.lastError = bot.telegram.lastError;
+    await saveBot(bot);
+    return bot;
+  }
+  const r = info.result;
+  bot.telegram.pendingUpdates = r.pending_update_count ?? 0;
+  bot.telegram.lastError = r.last_error_message ?? null;
+  bot.telegram.webhookOk = Boolean(r.url);
+  bot.telegram.webhookUrl = r.url || bot.telegram.webhookUrl;
+  if (bot.status !== "paused" && bot.status !== "draft") {
+    bot.status = r.url ? "live" : "paused";
+  }
+  if (r.last_error_message) bot.lastError = r.last_error_message;
+  else if (bot.status === "live") bot.lastError = null;
+  await saveBot(bot);
+  return bot;
 }
+
+const LEGACY_STATUS: Record<string, BotStatus> = {
+  running: "live",
+  installing: "deploying",
+  stopped: "paused",
+  crashed: "error",
+};
+
+let normalized = false;
 
 /**
- * Advance preview generation up to `now` and return the tail of the buffer,
- * or proxy the runner's ring buffer in runner mode.
+ * One-time migration for bots written before the webhook rewrite (they carried
+ * runner-era statuses such as `running`/`crashed`). Runs once per instance.
  */
-export async function readLogs(user: User, bot: Bot, after = 0): Promise<LogPage> {
-  const target = runnerTarget(user);
-
-  if (target.url && bot.mode === "runner") {
-    try {
-      const res = await runnerFetch<any>(target, `/bots/${bot.id}/logs?after=${after}`, { method: "GET" }, 8000);
-      if (res?.status && res.status !== bot.status) {
-        bot.status = res.status;
-        if (res.status === "crashed" && res.exitCode !== undefined) {
-          bot.lastError = res.error ?? `exited with code ${res.exitCode}`;
-          addEvent(bot, "crash", `Process exited (${res.exitCode}) — auto-restart #${bot.restartCount}`);
-          if (bot.autoRestart) bot.restartCount += 1;
-        }
-        await saveBot(bot);
-      }
-      return {
-        lines: (res?.lines ?? []) as LogLine[],
-        nextSeq: res?.nextSeq ?? after,
-        status: bot.status,
-        generated: 0,
+export async function normalizeLegacyBots() {
+  if (normalized) return;
+  normalized = true;
+  try {
+    const all = (await db.all("bots")) as unknown as Bot[];
+    for (const b of all) {
+      const next = LEGACY_STATUS[b.status as string];
+      const needsTelegram = !b.telegram;
+      if (!next && !needsTelegram) continue;
+      if (next) b.status = next;
+      const defaults: Bot["telegram"] = {
+        username: null,
+        botId: null,
+        firstName: null,
+        webhookUrl: null,
+        webhookOk: false,
+        pendingUpdates: 0,
+        lastError: null,
+        lastSyncAt: null,
+        lastUpdateAt: null,
+        updates: 0,
+        replies: 0,
+        errors: 0,
       };
-    } catch {
-      /* fall through to stored logs */
+      b.telegram = Object.assign(defaults, b.telegram ?? {});
+      b.desired = b.desired ?? (b.status === "paused" ? "paused" : "live");
+      b.behaviour = b.behaviour ?? compileBehaviour(b.content ?? "");
+      b.events = b.events ?? [];
+      await db.put("bots", b.id, b as unknown as Record<string, unknown>);
     }
+  } catch {
+    normalized = false;
   }
-
-  const doc = await getLogDoc(bot.id);
-  let generated = 0;
-
-  if (bot.status === "running" && bot.startedAt) {
-    const elapsed = Date.now() - bot.startedAt;
-    if (elapsed > doc.genUntil + PREVIEW_STEP_MS) {
-      const fresh = previewStream({
-        profile: bot.frameworkId ?? "generic",
-        seed: bot.previewSeed ?? 1,
-        maskedToken: bot.tokenMasked,
-        commands: bot.previewCommands,
-        entry: bot.entry,
-        requirements: parseRequirements(bot.requirements),
-        fromElapsed: doc.genUntil,
-        toElapsed: elapsed,
-        startSeq: doc.nextSeq,
-        startedAt: bot.startedAt,
-      });
-      if (fresh.length) {
-        doc.lines.push(...fresh);
-        doc.nextSeq += fresh.length;
-        generated = fresh.length;
-      }
-      doc.genUntil = elapsed;
-      await putLogDoc(doc);
-    }
-  }
-
-  const lines = doc.lines.filter((l) => l.seq > after).slice(-400);
-  return { lines, nextSeq: doc.nextSeq - 1, status: bot.status, generated };
 }
 
-/** Cheap status refresh used by dashboards. */
-export async function refreshStatuses(user: User, bots: Bot[]): Promise<Bot[]> {
-  const target = runnerTarget(user);
-  if (!target.url) {
-    return bots.map((b) => {
-      const s = previewStats(b);
-      return { ...b, stats: { ...b.stats, ...s } };
-    });
-  }
+export async function refreshStatuses(bots: Bot[]): Promise<Bot[]> {
+  await normalizeLegacyBots();
   return Promise.all(
     bots.map(async (b) => {
-      if (b.mode !== "runner" || b.status !== "running") return b;
       try {
-        const res = await runnerFetch<any>(target, `/bots/${b.id}/status`, { method: "GET" }, 4000);
-        if (res?.status && res.status !== b.status) {
-          b.status = res.status;
-          await saveBot(b);
-        }
-        return { ...b, stats: { ...b.stats, cpu: res?.cpu ?? 0, memMB: res?.memMB ?? 0 } };
+        return b.status === "live" || b.status === "error" ? await syncTelegram(b) : b;
       } catch {
         return b;
       }
@@ -353,7 +402,67 @@ export async function refreshStatuses(user: User, bots: Bot[]): Promise<Bot[]> {
   );
 }
 
-export const RUNNER_MODE_LABEL: Record<RunnerMode, string> = {
-  runner: "Runner",
-  preview: "Preview",
-};
+/**
+ * Rebuild a minimal, working bot when the store no longer has the record but
+ * Telegram still posts to the webhook (which happens on ephemeral storage after
+ * a cold start). The token travels inside the webhook URL, sealed.
+ */
+export function recoverBot(botId: string, token: string): Bot {
+  return {
+    id: botId,
+    userId: "recovered",
+    name: "recovered-bot",
+    path: "main.py",
+    content: "",
+    entry: "main.py",
+    files: [],
+    requirements: "",
+    env: {},
+    status: "live",
+    desired: "live",
+    tokenMasked: maskToken(token),
+    tokenEnc: seal(token),
+    webhookSecret: null,
+    framework: "Webhook engine",
+    frameworkId: "generic",
+    behaviour: compileBehaviour(""),
+    telegram: {
+      username: null,
+      botId: null,
+      firstName: null,
+      webhookUrl: null,
+      webhookOk: true,
+      pendingUpdates: 0,
+      lastError: null,
+      lastSyncAt: null,
+      lastUpdateAt: null,
+      updates: 0,
+      replies: 0,
+      errors: 0,
+    },
+    autoRestart: true,
+    restartCount: 0,
+    lastError: null,
+    startedAt: Date.now(),
+    stoppedAt: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    events: [],
+    stats: { uptimePct: 100, cpu: 0, memMB: 0 },
+  };
+}
+
+export function uptimePct(bot: Bot): number {
+  if (!bot.startedAt || bot.status === "paused" || bot.status === "draft") return 0;
+  const failed = bot.telegram?.errors ?? 0;
+  return Number(Math.max(90, 100 - failed * 0.5).toFixed(2));
+}
+
+export function statusLabel(status: BotStatus): string {
+  return (
+    { live: "LIVE", draft: "DRAFT", paused: "PAUSED", deploying: "DEPLOYING", error: "ERROR" }[status] ??
+    status.toUpperCase()
+  );
+}
+
+export { parseRequirements };

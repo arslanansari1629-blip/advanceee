@@ -432,7 +432,7 @@ const FRAMEWORKS: FrameworkRule[] = [
     pkg: "discord.py",
     pin: "discord.py>=2.4",
     test: /\bdiscord\.(?:Client|Intents|ext)\b|\bcommands\.Bot\s*\(/,
-    note: "discord.py detected — the runner also keeps Discord gateways online 24/7.",
+    note: "discord.py detected — note that BotForge's engine answers Telegram updates, not Discord gateways.",
   },
 ];
 
@@ -447,7 +447,7 @@ const BOT_RUNTIME_HINTS: Array<{ test: RegExp; msg: string }> = [
   },
   {
     test: /\bapp\.run\s*\(|\buvicorn\.run\s*\(/,
-    msg: "A web server was detected. Port 8080 is public on the runner, but a Telegram bot does not need one.",
+    msg: "A web server was detected. BotForge answers Telegram webhooks, so an HTTP server in your code is ignored.",
   },
   {
     test: /\bwhile\s+True\s*:(?![^\n]*await)/,
@@ -572,10 +572,10 @@ export function analyzeSource(source: string, extraFiles: { path: string; conten
     if (hint.test.test(blob)) warnings.push(hint.msg);
   }
   if (/\b(flask|fastapi|django)\b/.test(blob) && /\.run\(|uvicorn\.run/.test(blob)) {
-    warnings.push("Web framework detected: bind to 0.0.0.0:8080 so the public preview URL works.");
+    warnings.push("Web framework detected: BotForge already exposes an HTTPS endpoint per bot, so a second server is unnecessary.");
   }
   if (/\b(ptb|telegram)\b/i.test(blob) && !/polling|start_polling|run_polling|idle\(/i.test(blob)) {
-    warnings.push("No polling/idle call found — the process may exit right after starting.");
+    warnings.push("No polling/idle loop found — that is fine in webhook mode, your handlers still answer every update.");
   }
   const unresolved = [...found.values()].filter(
     (i) => !i.stdlib && !i.known && !localImports.has(i.module)

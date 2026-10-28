@@ -29,10 +29,8 @@ export async function POST(req: Request) {
     files: [{ path: "main.py", content: tpl.code }],
     requirements: analysis.requirements,
     env: { BOT_TOKEN: "" },
-    autoRestart: true,
     framework: analysis.framework,
     frameworkId: analysis.frameworkId,
-    tokenMasked: null,
   });
 
   return json({ user: publicUser(user) });

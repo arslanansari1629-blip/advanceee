@@ -41,23 +41,19 @@ export function useNow(interval = 1000) {
   return now;
 }
 
-export function StatusPill({ status, mode }: { status: BotStatus; mode?: string }) {
+export function StatusPill({ status, label }: { status: BotStatus; label?: string }) {
   const map: Record<string, { cls: string; dot: string; label: string }> = {
-    running: { cls: "text-emerald-300 border-emerald-400/30 bg-emerald-400/10", dot: "dot-live", label: "LIVE" },
-    installing: { cls: "text-cyan-300 border-cyan-400/30 bg-cyan-400/10", dot: "dot-warn", label: "INSTALLING" },
-    starting: { cls: "text-cyan-300 border-cyan-400/30 bg-cyan-400/10", dot: "dot-warn", label: "STARTING" },
-    stopped: { cls: "text-slate-300 border-white/15 bg-white/5", dot: "dot-idle", label: "STOPPED" },
-    crashed: { cls: "text-rose-300 border-rose-400/30 bg-rose-400/10", dot: "dot-err", label: "CRASHED" },
-    queued: { cls: "text-amber-300 border-amber-400/30 bg-amber-400/10", dot: "dot-warn", label: "QUEUED" },
+    live: { cls: "text-emerald-300 border-emerald-400/30 bg-emerald-400/10", dot: "dot-live", label: "LIVE" },
+    deploying: { cls: "text-cyan-300 border-cyan-400/30 bg-cyan-400/10", dot: "dot-warn", label: "DEPLOYING" },
+    draft: { cls: "text-slate-300 border-white/15 bg-white/5", dot: "dot-idle", label: "DRAFT" },
+    paused: { cls: "text-amber-300 border-amber-400/30 bg-amber-400/10", dot: "dot-warn", label: "PAUSED" },
+    error: { cls: "text-rose-300 border-rose-400/30 bg-rose-400/10", dot: "dot-err", label: "ERROR" },
   };
-  const s = map[status] ?? map.stopped;
+  const s = map[status] ?? map.draft;
   return (
     <span className={cx("pill", s.cls)}>
       <span className={cx("dot", s.dot)} />
-      {s.label}
-      {mode === "preview" && status === "running" && (
-        <span className="ml-1 text-[9px] font-bold tracking-wider text-amber-300/90">PREVIEW</span>
-      )}
+      {label ?? s.label}
     </span>
   );
 }
@@ -189,7 +185,7 @@ export function Banner({
   children,
   action,
 }: {
-  tone?: "info" | "warn";
+  tone?: "info" | "warn" | "error" | "success";
   title: string;
   children?: React.ReactNode;
   action?: React.ReactNode;
@@ -197,6 +193,8 @@ export function Banner({
   const tones = {
     info: "border-cyan-400/25 bg-cyan-400/[0.06] text-cyan-100",
     warn: "border-amber-400/25 bg-amber-400/[0.06] text-amber-100",
+    error: "border-rose-400/25 bg-rose-400/[0.06] text-rose-100",
+    success: "border-emerald-400/25 bg-emerald-400/[0.06] text-emerald-100",
   };
   return (
     <div className={cx("flex flex-wrap items-center gap-3 rounded-xl border px-3.5 py-2.5 text-[12.5px]", tones[tone])}>
@@ -211,12 +209,15 @@ export function Banner({
 
 export function streamClass(stream: LogLine["stream"]) {
   switch (stream) {
-    case "stderr":
+    case "error":
       return "log-err";
     case "system":
       return "log-sys";
     case "telegram":
       return "log-tg";
+    case "update":
+    case "reply":
+      return "log-out";
     default:
       return "log-out";
   }

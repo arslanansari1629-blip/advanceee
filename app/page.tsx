@@ -29,18 +29,18 @@ const features = [
   },
   {
     icon: IconTerminal,
-    title: "Live streaming logs",
-    body: "stdout, stderr, pip installs and Telegram gateway events stream into the console in real time. Filter, search, pause and download the buffer.",
+    title: "Live logs, real output",
+    body: "Every Telegram update, every compiled reply and every Bot API error streams into the console in real time. Filter, search, pause and download the buffer.",
   },
   {
     icon: IconShield,
-    title: "Crash supervision",
-    body: "Every process is supervised. A dead bot is restarted automatically, crash loops are detected and the traceback is captured next to the log line that caused it.",
+    title: "Always on, self-healing",
+    body: "Telegram pushes each update and the engine answers inline. There is no process to crash and no runner to attach — if an instance is cold, Telegram retries.",
   },
   {
     icon: IconCloud,
     title: "Unlimited free bots",
-    body: "No per-bot pricing, no queue limits. Deploy as many Telegram, Pyrogram, Telethon, aiogram or discord.py processes as you need.",
+    body: "No per-bot pricing, no queue limits, no card. Deploy as many Telegram bots as you want — python-telegram-bot, aiogram or pyTelegramBotAPI code.",
   },
   {
     icon: IconLock,
@@ -50,9 +50,9 @@ const features = [
 ];
 
 const steps = [
-  ["Paste your Python", "Drop the whole file in the editor — or load a template for PTB, aiogram, Pyrogram or Telethon."],
-  ["We detect & install", "Imports become a live requirements list with the right pins. pip resolves everything before the process starts."],
-  ["Bot goes live 24/7", "A supervised process boots, the gateway connects and logs stream into your dashboard instantly."],
+  ["Paste your Python", "Drop the whole file in the editor — or load a template for PTB, aiogram or pyTelegramBotAPI."],
+  ["We detect & compile", "Imports become a pinned requirements list and your handlers are compiled into an executable behaviour spec."],
+  ["Bot goes live 24/7", "We call setWebhook, Telegram starts pushing updates here, and replies go out instantly — from the site itself."],
 ];
 
 const mappings = [
@@ -224,25 +224,22 @@ export default async function Landing() {
       </section>
 
       {/* honesty */}
-      <section className="mt-16 rounded-2xl border border-amber-400/20 bg-amber-400/[0.05] p-6">
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-amber-100">
+      <section className="mt-16 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.05] p-6">
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-emerald-100">
           <IconActivity size={16} /> How hosting really works (no marketing)
         </h2>
-        <div className="mt-3 grid gap-4 text-[12.5px] leading-relaxed text-amber-100/80 sm:grid-cols-2">
+        <div className="mt-3 grid gap-4 text-[12.5px] leading-relaxed text-emerald-100/80 sm:grid-cols-2">
           <p>
-            Telegram bots need a <strong>long-lived process</strong>. Vercel functions are short-lived and
-            stateless, so a bot cannot stay online inside one. BotForge therefore has two layers: this
-            dashboard (deployed on Vercel) and a small <strong>runner</strong> container that actually keeps the
-            Python processes alive.
+            Instead of keeping a Python process alive, BotForge registers a{" "}
+            <strong>Telegram webhook</strong> for your bot. Telegram then delivers every message to this
+            deployment the moment it happens, and the engine answers with a direct Bot API call — so your bot
+            is reachable <strong>24/7 with nothing running in the background</strong>.
           </p>
           <p>
-            Until you attach a runner, bots run in <strong>preview mode</strong> — the whole lifecycle, log
-            stream and supervision UI is real, but the gateway is a deterministic simulation labelled
-            <span className="mx-1 pill !py-0 !text-[10px] border-amber-400/40 text-amber-200">PREVIEW</span>
-            so you are never misled. One command attaches a runner:{" "}
-            <code className="mono rounded bg-black/40 px-1.5 py-0.5 text-[11px]">
-              docker run -p 8081:8081 botforge/runner
-            </code>
+            No runner, no VPS, no container, no card. Paste Python, add the token from @BotFather, press
+            deploy. Your handlers (<code className="mono rounded bg-black/40 px-1 py-0.5 text-[11px]">/start</code>,{" "}
+            <code className="mono rounded bg-black/40 px-1 py-0.5 text-[11px]">/help</code>, custom commands,
+            echoes and inline buttons) are compiled into the engine and answered exactly as you wrote them.
           </p>
         </div>
       </section>

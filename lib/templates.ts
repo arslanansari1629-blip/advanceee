@@ -171,48 +171,64 @@ if __name__ == "__main__":
 `,
   },
   {
-    id: "pyrogram-userbot",
-    name: "Auto-forwarder · Pyrogram",
-    description: "MTProto userbot that mirrors messages between channels with keyword filters.",
-    framework: "Pyrogram (MTProto)",
-    requirements: "pyrogram>=2.0.106\nTgCrypto",
-    badges: ["MTProto", "session persistence", "filters"],
+    id: "telebot-buttons",
+    name: "Inline buttons · pyTelegramBotAPI",
+    description: "Menu with inline callback buttons, /help text and a friendly echo reply.",
+    framework: "pyTelegramBotAPI (telebot)",
+    requirements: "pyTelegramBotAPI>=4.24\npython-dotenv",
+    badges: ["inline keyboard", "callbacks", "echo"],
     code: `import os
 
-from pyrogram import Client, filters
+import telebot
+from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-API_ID = int(os.environ["API_ID"])
-API_HASH = os.environ["API_HASH"]
-SESSION = os.environ.get("SESSION_STRING")
-
-KEYWORDS = ("urgent", "invoice", "refund")
-
-app = Client(
-    "forwarder",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    session_string=SESSION or None,
-    workdir=".",
-)
+TOKEN = os.environ.get("BOT_TOKEN", "")
+bot = telebot.TeleBot(TOKEN)
 
 
-@app.on_message(filters.group & filters.text)
-async def mirror(client, message):
-    body = (message.text or "").lower()
-    if any(k in body for k in KEYWORDS):
-        await app.send_message("me", f"🔔 keyword hit in {message.chat.title}: {message.text}")
-        await message.forward("me")
-        print(f"forwarded msg {message.id} from {message.chat.id}", flush=True)
+@bot.message_handler(commands=["start"])
+def start(message):
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("💰 Pricing", callback_data="pricing"),
+        InlineKeyboardButton("📞 Support", callback_data="support"),
+    )
+    bot.reply_to(
+        message,
+        f"Hey {message.from_user.first_name}! Welcome to the Forge demo bot.\\n\\nPick an option below.",
+        reply_markup=markup,
+    )
 
 
-@app.on_message(filters.command("ping"))
-async def ping(client, message):
-    await message.reply("pong 🏓")
+@bot.message_handler(commands=["help"])
+def help_cmd(message):
+    bot.reply_to(message, "Commands:\\n/start — main menu\\n/help — this text\\n/ping — latency check")
+
+
+@bot.message_handler(commands=["ping"])
+def ping(message):
+    bot.reply_to(message, "🏓 pong")
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "pricing")
+def pricing(call):
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, "Plans: Free (unlimited), Pro (faster webhook). Docs at /help")
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "support")
+def support(call):
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, "Support: reply here and a human answers {time}.")
+
+
+@bot.message_handler(func=lambda m: True)
+def echo(message):
+    bot.reply_to(message, "You said: {text}")
 
 
 if __name__ == "__main__":
-    print("starting pyrogram client…", flush=True)
-    app.run()
+    bot.infinity_polling()
 `,
   },
   {
@@ -285,39 +301,49 @@ if __name__ == "__main__":
 `,
   },
   {
-    id: "worker",
-    name: "Cron worker · plain Python",
-    description: "No Telegram required — a supervised loop that hits an API and prints a report.",
-    framework: "Plain Python",
-    requirements: "requests",
-    badges: ["no gateway", "cron", "heartbeat"],
-    code: `import os
-import time
-from datetime import datetime
+    id: "aiogram-echo",
+    name: "Minimal bot · aiogram 3",
+    description: "The smallest aiogram v3 bot: CommandStart, /help and a text echo handler.",
+    framework: "aiogram v3",
+    requirements: "aiogram>=3.15",
+    badges: ["aiogram 3", "async", "echo"],
+    code: `import asyncio
+import os
 
-import requests
+from aiogram import Bot, Dispatcher
+from aiogram.filters import Command, CommandStart
+from aiogram.types import Message
 
-INTERVAL = int(os.environ.get("INTERVAL", "60"))
-TARGET = os.environ.get("TARGET_URL", "https://api.github.com/zen")
+bot = Bot(os.environ["BOT_TOKEN"])
+dp = Dispatcher()
 
 
-def tick() -> None:
-    started = time.time()
-    try:
-        res = requests.get(TARGET, timeout=10)
-        print(f"[{datetime.utcnow():%H:%M:%S}] GET {TARGET} -> {res.status_code} ({len(res.content)}b)", flush=True)
-        if res.ok and res.text:
-            print(f"  payload: {res.text.strip()[:120]}", flush=True)
-    except Exception as exc:
-        print(f"  request failed: {exc}", flush=True)
-    print(f"  took {time.time() - started:.2f}s · sleeping {INTERVAL}s", flush=True)
+@dp.message(CommandStart())
+async def start(message: Message):
+    await message.answer(f"Hi {message.from_user.first_name}! I am online 24/7 with no server.")
+
+
+@dp.message(Command("help"))
+async def help_cmd(message: Message):
+    await message.answer("Commands:\\n/start — greet\\n/help — this text\\n/ping — latency")
+
+
+@dp.message(Command("ping"))
+async def ping(message: Message):
+    await message.answer("🏓 pong")
+
+
+@dp.message()
+async def echo(message: Message):
+    await message.answer(f"You said: {message.text}")
+
+
+async def main():
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-    print("worker online", flush=True)
-    while True:
-        tick()
-        time.sleep(INTERVAL)
+    asyncio.run(main())
 `,
   },
 ];

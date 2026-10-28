@@ -17,21 +17,19 @@ import { cx } from "./ui";
 
 interface Me {
   user: { id: string; name: string; email: string; plan: string } | null;
-  runnerUrl?: string | null;
 }
 
 const nav = [
   { href: "/console", label: "Overview", icon: IconGrid },
   { href: "/console/new", label: "Deploy bot", icon: IconPlus },
-  { href: "/console/settings", label: "Runner & settings", icon: IconSettings },
-  { href: "/console/setup", label: "Host 24/7 setup", icon: IconBolt },
+  { href: "/console/settings", label: "Settings", icon: IconSettings },
 ];
 
 export default function ConsoleShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
-  const [runner, setRunner] = useState<{ connected: boolean; mode: string; latencyMs?: number; error?: string } | null>(null);
+  const [engine, setEngine] = useState<{ modes: string; db: string; site: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -39,17 +37,17 @@ export default function ConsoleShell({ children }: { children: React.ReactNode }
       try {
         const [a, b] = await Promise.all([
           fetch("/api/auth/me", { cache: "no-store" }).then((r) => r.json()),
-          fetch("/api/runner", { cache: "no-store" }).then((r) => r.json()),
+          fetch("/api/overview", { cache: "no-store" }).then((r) => r.json()),
         ]);
         if (!alive) return;
         setMe(a);
-        setRunner(b.runner);
+        if (b?.engine) setEngine({ modes: b.engine.mode, db: b.engine.database, site: b.engine.siteUrl });
       } catch {
         /* offline */
       }
     };
     load();
-    const id = setInterval(load, 30_000);
+    const id = setInterval(load, 45_000);
     return () => {
       alive = false;
       clearInterval(id);
@@ -64,7 +62,6 @@ export default function ConsoleShell({ children }: { children: React.ReactNode }
 
   return (
     <div className="flex min-h-screen">
-      {/* sidebar */}
       <aside className="sticky top-0 hidden h-screen w-[236px] shrink-0 flex-col border-r border-white/[0.07] bg-black/30 px-3 py-4 backdrop-blur-xl lg:flex">
         <Link href="/console" className="mb-6 flex items-center gap-2.5 px-1.5">
           <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 via-indigo-500 to-fuchsia-500 text-black">
@@ -101,20 +98,19 @@ export default function ConsoleShell({ children }: { children: React.ReactNode }
 
         <div className="mt-5 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
           <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            <IconCloud size={11} /> runtime
+            <IconCloud size={11} /> engine
           </p>
           <div className="mt-1.5 flex items-center gap-1.5 text-[11.5px]">
-            <span className={cx("dot", runner?.connected ? "dot-live" : "dot-warn")} />
-            <span className={runner?.connected ? "text-emerald-300" : "text-amber-300"}>
-              {runner?.connected ? "Runner connected" : "Preview mode"}
-            </span>
+            <span className="dot dot-live" />
+            <span className="text-emerald-300">webhook · always on</span>
           </div>
-          <p className="mt-1 truncate text-[10.5px] text-slate-500">
-            {runner?.connected ? `${runner.latencyMs ?? 0} ms · ${me?.runnerUrl ?? "platform runner"}` : "attach a runner for real processes"}
+          <p className="mt-1 truncate text-[10.5px] text-slate-500">no server · no polling · no runner</p>
+          <p className="mt-1 truncate text-[10.5px] text-slate-600">
+            storage: <span className="mono text-slate-400">{engine?.db ?? "—"}</span>
           </p>
-          {!runner?.connected && (
-            <Link href="/console/setup" className="mt-2 block text-[10.5px] font-semibold text-cyan-300 hover:underline">
-              Run the setup guide →
+          {engine?.db === "file" && (
+            <Link href="/console/settings" className="mt-2 block text-[10.5px] font-semibold text-amber-300 hover:underline">
+              connect Postgres for durable state →
             </Link>
           )}
         </div>
@@ -146,7 +142,6 @@ export default function ConsoleShell({ children }: { children: React.ReactNode }
         </div>
       </aside>
 
-      {/* main */}
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/[0.07] bg-[#06070c]/80 px-4 py-3 backdrop-blur-xl">
           <Link href="/console" className="flex items-center gap-2 lg:hidden">
@@ -166,22 +161,12 @@ export default function ConsoleShell({ children }: { children: React.ReactNode }
                 ? "deploy"
                 : pathname.startsWith("/console/bots")
                 ? "bot detail"
-                : pathname.startsWith("/console/setup")
-                ? "host 24/7"
                 : "settings"}
             </span>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <span
-              className={cx(
-                "pill hidden sm:inline-flex",
-                runner?.connected
-                  ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                  : "border-amber-400/30 bg-amber-400/10 text-amber-200"
-              )}
-            >
-              <span className={cx("dot", runner?.connected ? "dot-live" : "dot-warn")} />
-              {runner?.connected ? "runner online" : "preview mode"}
+            <span className="pill hidden border-emerald-400/30 bg-emerald-400/10 text-emerald-300 sm:inline-flex">
+              <span className="dot dot-live" /> webhook engine online
             </span>
             <Link href="/console/new" className="btn btn-primary !py-1.5 !text-[12px]">
               <IconBolt size={13} /> Deploy

@@ -1,5 +1,5 @@
 import { adminOnly, bad, json, readJson } from "@/lib/api";
-import { deleteBot, getBot, stopBot } from "@/lib/bots";
+import { deleteBot, getBot } from "@/lib/bots";
 import { db } from "@/lib/db";
 import type { Bot, User } from "@/lib/types";
 
@@ -37,8 +37,7 @@ export async function POST(req: Request) {
       const bots = ((await db.all("bots")) as unknown as Bot[]).filter((b) => b.userId === user.id);
       for (const bot of bots) {
         const live = await getBot(bot.id);
-        if (live?.status === "running") await stopBot(user, live, "Account deleted by operator");
-        await deleteBot(bot.id);
+        if (live) await deleteBot(live);
       }
       await db.del("users", user.id);
       return json({ ok: true, deletedBots: bots.length });

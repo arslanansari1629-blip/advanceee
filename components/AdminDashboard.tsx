@@ -28,7 +28,9 @@ interface AdminBot {
   id: string;
   name: string;
   status: string;
-  mode: string;
+  username: string | null;
+  updates: number;
+  replies: number;
   framework: string;
   entry: string;
   requirements: string;
@@ -50,26 +52,26 @@ interface AdminUser {
   email: string;
   plan: string;
   createdAt: number;
-  runnerUrl: string | null;
+  updates: number;
   bots: number;
   live: number;
 }
 
 interface AdminData {
   storage: string;
-  runner: { connected: boolean; mode: string; python?: string; latencyMs?: number; error?: string };
+  engine: { mode: string; online: boolean };
   settings: { maintenance: boolean; maintenanceMessage: string; broadcast: string; signupsOpen: boolean };
   stats: {
     users: number;
     bots: number;
-    running: number;
-    stopped: number;
-    crashed: number;
-    installing: number;
+    live: number;
+    drafts: number;
+    paused: number;
+    errors: number;
+    updates: number;
+    replies: number;
     restarts: number;
     packages: number;
-    cpu: number;
-    memMB: number;
     suspended: number;
   };
   users: AdminUser[];
@@ -251,13 +253,13 @@ export default function AdminDashboard() {
             <span
               className={cx(
                 "pill !text-[10px]",
-                data.runner.connected
+                data.engine.online
                   ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
                   : "border-amber-400/30 bg-amber-400/10 text-amber-200"
               )}
             >
-              <span className={cx("dot", data.runner.connected ? "dot-live" : "dot-warn")} />
-              {data.runner.connected ? "runner online" : "preview"}
+              <span className={cx("dot", data.engine.online ? "dot-live" : "dot-warn")} />
+              {data.engine.online ? "webhook engine" : "offline"}
             </span>
             {data.settings.maintenance && (
               <span className="pill !text-[10px] border-rose-400/30 bg-rose-400/10 text-rose-200">
@@ -305,11 +307,11 @@ export default function AdminDashboard() {
           <>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
               <Metric label="Accounts" value={s.users} sub={`${s.suspended} suspended`} accent="violet" />
-              <Metric label="Bots" value={s.bots} sub={`${s.running} live`} accent="cyan" />
-              <Metric label="Crashed" value={s.crashed} sub={s.crashed ? "needs attention" : "all healthy"} accent={s.crashed ? "rose" : "lime"} />
-              <Metric label="Restarts" value={s.restarts} sub="all time" accent="violet" />
-              <Metric label="Packages" value={s.packages} sub="installed fleet-wide" accent="cyan" />
-              <Metric label="Fleet load" value={`${s.cpu.toFixed(1)}%`} sub={`${Math.round(s.memMB)} MB rss`} accent="lime" />
+              <Metric label="Bots" value={s.bots} sub={`${s.live} live · ${s.drafts} draft`} accent="cyan" />
+              <Metric label="Errors" value={s.errors} sub={s.errors ? "needs attention" : "all healthy"} accent={s.errors ? "rose" : "lime"} />
+              <Metric label="Updates" value={s.updates} sub="from telegram" accent="cyan" />
+              <Metric label="Replies" value={s.replies} sub="sent by engine" accent="violet" />
+              <Metric label="Packages" value={s.packages} sub="declared fleet-wide" accent="lime" />
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
@@ -332,9 +334,9 @@ export default function AdminDashboard() {
                           {b.ownerEmail} · {b.framework}
                         </p>
                       </div>
-                      <StatusPill status={b.status as any} mode={b.mode} />
+                      <StatusPill status={b.status as any} />
                       <span className="mono text-[10.5px] text-slate-500">
-                        {b.status === "running" && b.startedAt ? fmtDuration(now - b.startedAt) : "—"}
+                        {b.updates} upd · {b.replies} rep
                       </span>
                       <button className="btn btn-ghost !px-1.5 !py-1" onClick={() => { setLogBot(b); setTab("logs"); }}>
                         <IconTerminal size={12} />
@@ -353,9 +355,9 @@ export default function AdminDashboard() {
                     <IconCloud size={13} /> runtime
                   </p>
                   <div className="mt-2 space-y-1.5 text-[11.5px]">
-                    <Row k="mode" v={data.runner.connected ? "real runner" : "preview gateway"} />
-                    <Row k="python" v={data.runner.python ?? "3.11.9"} />
-                    <Row k="latency" v={data.runner.latencyMs ? `${data.runner.latencyMs} ms` : "—"} />
+                    <Row k="mode" v="webhook engine" />
+                    <Row k="runner" v="none" />
+                    <Row k="updates" v={String(s.updates)} />
                     <Row k="storage" v={data.storage} />
                     <Row k="signups" v={data.settings.signupsOpen ? "open" : "closed"} />
                   </div>
@@ -395,7 +397,7 @@ export default function AdminDashboard() {
               />
             </div>
             {tab === "bots" &&
-              ["all", "running", "stopped", "crashed", "installing"].map((f) => (
+              ["all", "live", "draft", "paused", "error"].map((f) => (
                 <button
                   key={f}
                   onClick={() => setStateFilter(f)}
@@ -422,8 +424,8 @@ export default function AdminDashboard() {
                     <th className="px-3 py-2 font-semibold">Bot</th>
                     <th className="px-3 py-2 font-semibold">Owner</th>
                     <th className="px-3 py-2 font-semibold">Status</th>
-                    <th className="px-3 py-2 font-semibold">Uptime</th>
-                    <th className="px-3 py-2 font-semibold">CPU / RSS</th>
+                    <th className="px-3 py-2 font-semibold">Telegram</th>
+                    <th className="px-3 py-2 font-semibold">Traffic</th>
                     <th className="px-3 py-2 font-semibold">Pkgs</th>
                     <th className="px-3 py-2 text-right font-semibold">Controls</th>
                   </tr>
@@ -440,23 +442,23 @@ export default function AdminDashboard() {
                         <p className="text-[10px] text-slate-600">{b.ownerName}</p>
                       </td>
                       <td className="px-3 py-2">
-                        <StatusPill status={b.status as any} mode={b.mode} />
+                        <StatusPill status={b.status as any} />
                         {b.lastError && (
                           <p className="mono mt-1 max-w-[180px] truncate text-[9.5px] text-rose-400">{b.lastError}</p>
                         )}
                       </td>
                       <td className="mono px-3 py-2 text-slate-300">
-                        {b.status === "running" && b.startedAt ? fmtDuration(now - b.startedAt) : "—"}
+                        {b.username ? `@${b.username}` : "—"}
                       </td>
                       <td className="mono px-3 py-2 text-slate-300">
-                        {b.status === "running" ? `${b.stats.cpu.toFixed(1)}% · ${Math.round(b.stats.memMB)}mb` : "—"}
+                        {b.updates} upd · {b.replies} rep
                       </td>
                       <td className="mono px-3 py-2 text-slate-400">
                         {b.requirements.split("\n").filter(Boolean).length}
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1">
-                          {b.status === "running" ? (
+                          {b.status === "live" ? (
                             <button className="btn !px-1.5 !py-1 !text-[10px]" disabled={busy === b.id} onClick={() => botAction(b, "stop")}>
                               <IconStop size={10} />
                             </button>
@@ -499,7 +501,7 @@ export default function AdminDashboard() {
                     <th className="px-3 py-2 font-semibold">Account</th>
                     <th className="px-3 py-2 font-semibold">Plan</th>
                     <th className="px-3 py-2 font-semibold">Bots</th>
-                    <th className="px-3 py-2 font-semibold">Runner</th>
+                    <th className="px-3 py-2 font-semibold">Updates</th>
                     <th className="px-3 py-2 font-semibold">Joined</th>
                     <th className="px-3 py-2 text-right font-semibold">Controls</th>
                   </tr>
@@ -536,7 +538,7 @@ export default function AdminDashboard() {
                         <span className="text-slate-300">{u.bots}</span>
                         <span className="ml-1 text-[10px] text-emerald-400">{u.live} live</span>
                       </td>
-                      <td className="mono px-3 py-2 text-[10.5px] text-slate-500">{u.runnerUrl ?? "—"}</td>
+                      <td className="mono px-3 py-2 text-[10.5px] text-slate-400">{u.updates}</td>
                       <td className="px-3 py-2 text-[10.5px] text-slate-500">{timeAgo(u.createdAt)}</td>
                       <td className="px-3 py-2 text-right">
                         <button
@@ -584,7 +586,7 @@ export default function AdminDashboard() {
               </select>
               {logBot && (
                 <div className="flex items-center gap-1.5">
-                  <StatusPill status={logBot.status as any} mode={logBot.mode} />
+                  <StatusPill status={logBot.status as any} />
                   <span className="mono text-[10.5px] text-slate-500">{logBot.framework}</span>
                 </div>
               )}
@@ -679,8 +681,8 @@ export default function AdminDashboard() {
                 </p>
                 <div className="mt-2 space-y-1.5 text-[11.5px]">
                   <Row k="storage backend" v={data.storage} />
-                  <Row k="runner" v={data.runner.connected ? data.runner.mode : "preview only"} />
-                  <Row k="python" v={data.runner.python ?? "3.11.9"} />
+                  <Row k="engine" v={data.engine.mode} />
+                  <Row k="runner" v="none" />
                   <Row k="region" v="iad1 (vercel)" />
                   <Row k="signups" v={data.settings.signupsOpen ? "open" : "closed"} />
                 </div>
@@ -693,7 +695,7 @@ export default function AdminDashboard() {
                 <ul className="mt-2 space-y-1.5 text-[11.5px] leading-relaxed text-slate-400">
                   <li>• Deleting an account removes every bot and log owned by it.</li>
                   <li>• “Suspended” blocks sign-in immediately; bots keep running until stopped.</li>
-                  <li>• Preview-mode bots simulate the gateway — attach a runner for real processes.</li>
+                  <li>• Bots reply straight from the webhook endpoint — no runner or VPS exists.</li>
                   <li>• This console is never linked from the public site.</li>
                 </ul>
               </div>
@@ -705,9 +707,9 @@ export default function AdminDashboard() {
                 <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
                   {[
                     ["bots", s.bots],
-                    ["live", s.running],
-                    ["crashed", s.crashed],
-                    ["installing", s.installing],
+                    ["live", s.live],
+                    ["paused", s.paused],
+                    ["errors", s.errors],
                     ["accounts", s.users],
                     ["suspended", s.suspended],
                   ].map(([k, v]) => (
