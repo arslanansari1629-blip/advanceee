@@ -7,13 +7,20 @@ export const dynamic = "force-dynamic";
  * Public, non-sensitive probe: is this console able to reach the product?
  * No counts, no accounts, no tokens — just connectivity facts.
  */
-export async function GET() {
+export async function GET(request: Request) {
   if (!isProductConfigured()) {
     return NextResponse.json({ console: "botforge-admin", product: { configured: false } }, { status: 200 });
   }
 
+  // Cheap by default; ?deep=1 also authenticates against the product and
+  // checks the operator payload, so a public probe cannot hammer the product.
+  const deep = new URL(request.url).searchParams.get("deep") === "1";
+
   const started = Date.now();
-  const [result, operatorLogin] = await Promise.all([fetchProductHealth(), probeOperatorLogin()]);
+  const [result, operatorLogin] = await Promise.all([
+    fetchProductHealth(),
+    deep ? probeOperatorLogin() : Promise.resolve("skipped" as const),
+  ]);
 
   // Does the *operator* payload still have the shape the console renders?
   // Only the verdict is reported here — never a count, row or token.
