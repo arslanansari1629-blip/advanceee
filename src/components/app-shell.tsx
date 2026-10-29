@@ -118,7 +118,13 @@ const notifications = [
   },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  admin,
+}: {
+  children: React.ReactNode;
+  admin?: { user: string; name: string };
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const { push } = useToast();
@@ -131,6 +137,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [clock, setClock] = useState("");
   const [org, setOrg] = useState("BotForge Cloud");
+  const me = admin ?? { user: "admin", name: "Admin" };
+  const meEmail = `${me.user.toLowerCase()}@forge.dev`;
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -397,17 +405,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 onClick={() => setMenu(menu === "user" ? "none" : "user")}
                 className="flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-raised"
               >
-                <Avatar name="Arslan Ansari" color="#34e0a1" size={26} />
+                <Avatar name={me.name} color="#34e0a1" size={26} />
                 <span className="sidebar-label text-left">
-                  <span className="block text-[11.5px] font-medium leading-tight text-ink">Arslan</span>
+                  <span className="block max-w-[86px] truncate text-[11.5px] font-medium leading-tight text-ink">
+                    {me.name}
+                  </span>
                   <span className="block text-[9.5px] leading-tight text-faint">owner</span>
                 </span>
               </button>
               {menu === "user" ? (
                 <div className="absolute bottom-full left-0 z-50 mb-1 w-56 overflow-hidden rounded-lg border border-line bg-panel shadow-pop">
                   <div className="border-b border-line/80 px-3 py-2">
-                    <p className="text-[12px] font-medium text-ink">Arslan Ansari</p>
-                    <p className="text-[10.5px] text-faint">arslan@forge.dev · owner</p>
+                    <p className="text-[12px] font-medium text-ink">{me.name}</p>
+                    <p className="text-[10.5px] text-faint">{meEmail} · owner</p>
                   </div>
                   <Link href="/admin/settings" className="flex items-center gap-2 px-3 py-2 text-[12px] text-muted hover:bg-raised hover:text-ink">
                     <Settings size={13} /> Workspace settings
@@ -415,12 +425,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Link href="/admin/audit" className="flex items-center gap-2 px-3 py-2 text-[12px] text-muted hover:bg-raised hover:text-ink">
                     <ShieldCheck size={13} /> Security & audit
                   </Link>
-                  <button
-                    onClick={() => push({ kind: "info", title: "Signed out (demo)", body: "Session cookie cleared in the demo shell." })}
-                    className="flex w-full items-center gap-2 border-t border-line/80 px-3 py-2 text-[12px] text-[#ff8a94] hover:bg-[#ff5d6c]/10"
-                  >
-                    <LogOut size={13} /> Sign out
-                  </button>
+                  <form action="/api/auth/logout" method="post">
+                    <button
+                      type="submit"
+                      className="flex w-full items-center gap-2 border-t border-line/80 px-3 py-2 text-[12px] text-[#ff8a94] hover:bg-[#ff5d6c]/10"
+                    >
+                      <LogOut size={13} /> Sign out
+                    </button>
+                  </form>
                 </div>
               ) : null}
             </div>

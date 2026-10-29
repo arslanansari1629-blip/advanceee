@@ -10,10 +10,45 @@ dataset, and every control is interactive.
 
 ```bash
 npm install
-npm run dev     # http://localhost:3000  → redirects to /admin
+cp .env.example .env.local    # set ADMIN_USERNAME / ADMIN_PASSWORD
+npm run dev     # http://localhost:3000  → /login → /admin
 npm run build   # production build
 npm start       # production server
 npm run typecheck
+```
+
+## Authentication
+
+The console is gated by a username + password login. **Credentials are never stored
+in the repository** — they are read from the environment at runtime:
+
+| Variable | Purpose |
+| --- | --- |
+| `ADMIN_USERNAME` | Login username (e.g. `Arslan`) |
+| `ADMIN_PASSWORD` | Login password |
+| `ADMIN_DISPLAY_NAME` | Optional friendly name shown in the sidebar (defaults to the username) |
+| `ADMIN_SESSION_SECRET` | Optional extra signing key; `openssl rand -hex 32` |
+
+How it works:
+
+- `POST /api/auth/login` verifies the credentials with a constant-time compare, then
+  issues an **HMAC-SHA256 signed, httpOnly** session cookie (`bf_admin_session`).
+- Sessions last 12 hours, or 7 days with “keep me signed in”.
+- `src/middleware.ts` protects `/admin/*` and `/api/admin/*`: browsers are redirected to
+  `/login?next=…`, API calls get `401`. The Telegram webhook (`/api/tg/*`) stays public.
+- Brute force is throttled to 8 attempts / 5 minutes per IP; the login form and the API
+  share the same counter.
+- `POST /api/auth/logout` clears the cookie; `GET /api/auth/me` reports the session.
+- If the credentials are missing the console answers `503 auth_not_configured` instead of
+  silently opening up.
+
+On Vercel, add the variables under **Project → Settings → Environment Variables**
+(Production **and** Preview), then redeploy:
+
+```bash
+vercel env add ADMIN_USERNAME production
+vercel env add ADMIN_PASSWORD production
+vercel env add ADMIN_SESSION_SECRET production
 ```
 
 ## Screens
@@ -50,6 +85,12 @@ curl /api/admin/bots/b_7f31                     # one bot (secrets masked)
 curl -X PATCH /api/admin/bots/b_7f31 -d '{"status":"paused"}'
 curl -N /api/admin/logs/stream                  # Server-Sent Events log stream
 curl -X POST /api/tg/b_7f31 -d '{"message":{"text":"/start",…}}'   # simulated webhook reply
+
+# auth
+curl -c jar -X POST /api/auth/login -H 'content-type: application/json' \
+  -d '{"username":"…","password":"…","remember":true}'
+curl -b jar /api/auth/me            # { authenticated: true, user, expires_at }
+curl -b jar -X POST /api/auth/logout
 ```
 
 The `POST /api/tg/[botId]` route behaves like the real BotForge gateway: it validates the bot,
@@ -78,6 +119,7 @@ src/
 - The dataset is generated with a fixed seed (`20261029`) so charts and tables look identical on
   every reload and between server and client.
 - Bot tokens, API keys and webhook secrets are masked everywhere, including exports.
+- The admin console is password protected; see **Authentication** above for the env vars.
 - Interactions (pause, recompile, refunds, flags, replies, invites) update local UI state and raise
   a toast; mutations are intentionally not persisted — this is a demo console for an existing
   product, not a backend.
