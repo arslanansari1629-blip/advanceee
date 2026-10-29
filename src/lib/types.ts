@@ -1,141 +1,92 @@
-export type BotStatus = "live" | "paused" | "error" | "draft" | "compiling";
-export type Plan = "free" | "pro" | "scale";
-export type Library = "python-telegram-bot" | "aiogram" | "pyTelegramBotAPI" | "pyrogram";
+/**
+ * Shapes returned by the live BotForge Cloud operator API
+ * (`GET /api/admin/data`, `GET|POST /api/admin/settings`).
+ *
+ * Everything the console renders comes from these payloads — there is no local
+ * fixture data anywhere in this app.
+ */
 
-export interface Bot {
-  id: string;
-  slug: string;
-  name: string;
-  handle: string;
-  tokenMask: string;
-  ownerId: string;
-  status: BotStatus;
-  library: Library;
-  version: string;
-  handlers: string[];
-  imports: { module: string; pypi: string; pin?: string }[];
-  updates24h: number;
-  updates7d: number[];
-  successRate: number;
-  p95: number;
-  createdAt: string;
-  lastDeploy: string;
-  region: string;
-  env: { key: string; value: string; secret: boolean }[];
-  webhook: { url: string; deliveries: number; failures: number; lastStatus: number; secretSet: boolean };
-  source: string;
-  flags: string[];
-  cpuMs: number;
-  storageKb: number;
-}
+export type ProductBotStatus = "live" | "draft" | "paused" | "deploying" | "error";
 
-export interface User {
+export interface ProductBot {
   id: string;
   name: string;
-  email: string;
-  telegram: string;
-  plan: Plan;
-  role: "owner" | "admin" | "member" | "viewer";
-  status: "active" | "suspended" | "invited";
-  bots: number;
+  status: ProductBotStatus;
+  username: string | null;
+  framework: string;
+  entry: string;
+  requirements: string;
+  restartCount: number;
+  autoRestart: boolean;
+  startedAt: number | null;
+  createdAt: number;
+  lastError: string | null;
+  tokenMasked: string | null;
   updates: number;
-  mrr: number;
-  joined: string;
-  lastSeen: string;
-  country: string;
-  countryCode: string;
-  color: string;
+  replies: number;
+  ownerId: string;
+  ownerEmail: string;
+  ownerName: string;
+  stats: { uptimePct: number; cpu: number; memMB: number };
 }
 
-export type LogLevel = "info" | "success" | "warn" | "error" | "debug";
-export interface LogLine {
+export interface ProductUser {
   id: string;
-  ts: string;
-  level: LogLevel;
-  bot: string;
-  event: "update" | "reply" | "webhook" | "compile" | "error" | "auth";
-  message: string;
-  latency: number | null;
-  chat: string;
-  payload?: Record<string, unknown>;
-}
-
-export interface Invoice {
-  id: string;
-  customer: string;
+  name: string;
   email: string;
-  plan: Plan;
-  amount: number;
-  status: "paid" | "open" | "failed" | "refunded";
-  date: string;
-  method: string;
+  plan: string;
+  createdAt: number;
+  bots: number;
+  live: number;
+  updates: number;
 }
 
-export interface Ticket {
-  id: string;
-  subject: string;
-  user: string;
-  email: string;
-  category: "deploy" | "billing" | "bug" | "abuse" | "feature";
-  priority: "urgent" | "high" | "normal" | "low";
-  status: "open" | "pending" | "resolved";
-  updated: string;
-  unread: number;
-  messages: { from: "user" | "admin"; author: string; body: string; at: string }[];
+export interface ProductStats {
+  users: number;
+  bots: number;
+  live: number;
+  drafts: number;
+  paused: number;
+  errors: number;
+  updates: number;
+  replies: number;
+  restarts: number;
+  packages: number;
+  suspended: number;
 }
 
-export interface AuditEntry {
-  id: string;
-  actor: string;
-  actorColor: string;
-  action: string;
-  target: string;
-  ip: string;
+export interface PlatformSettings {
+  id?: string;
+  maintenance: boolean;
+  maintenanceMessage: string;
+  broadcast: string;
+  signupsOpen: boolean;
+  updatedAt?: number;
+}
+
+export interface AdminData {
+  storage: string;
+  engine: { mode: string; online: boolean };
+  settings: PlatformSettings;
+  stats: ProductStats;
+  users: ProductUser[];
+  bots: ProductBot[];
+}
+
+export interface ProductHealth {
+  ok: boolean;
+  service: string;
+  version: string;
+  mode: string;
+  runner: string;
+  storage: string;
+  siteUrl: string;
+  endpoint: string;
   time: string;
-  severity: "low" | "medium" | "high";
-  meta: string;
 }
 
-export interface Flag {
-  key: string;
-  name: string;
-  description: string;
-  enabled: boolean;
-  rollout: number;
-  envs: string[];
-  owner: string;
-  updated: string;
-  tag: string;
-}
-
-export interface Template {
-  id: string;
-  name: string;
-  library: Library;
-  description: string;
-  deploys: number;
-  rating: number;
-  tags: string[];
-  accent: string;
-  source: string;
-}
-
-export interface Service {
-  name: string;
-  status: "operational" | "degraded" | "outage";
-  uptime: number;
-  latency: number;
-  region: string;
-  days: number[];
-}
-
-export interface Incident {
-  id: string;
-  title: string;
-  severity: "minor" | "major" | "critical";
-  status: "resolved" | "monitoring" | "investigating";
-  started: string;
-  duration: string;
-  services: string[];
-  summary: string;
-}
+export type AdminState =
+  | { state: "ok"; data: AdminData; latencyMs: number; baseUrl: string }
+  | { state: "unlinked"; baseUrl: string }
+  | { state: "unauthorized"; baseUrl: string }
+  | { state: "unreachable"; baseUrl: string; error: string };

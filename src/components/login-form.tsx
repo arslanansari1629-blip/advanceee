@@ -54,8 +54,9 @@ export function LoginForm({ configured, loggedOut }: { configured: boolean; logg
         <div className="flex items-start gap-2 rounded-lg border border-[#f5b544]/30 bg-[#f5b544]/[0.07] p-2.5 text-[11px] text-[#f7c66b]">
           <TriangleAlert size={13} className="mt-0.5 shrink-0" />
           <span>
-            No credentials configured. Set <code className="font-mono">ADMIN_USERNAME</code> and{" "}
-            <code className="font-mono">ADMIN_PASSWORD</code> in the environment, then redeploy.
+            No sign-in is configured. Set <code className="font-mono">BOTFORGE_API_URL</code> to reach the product
+            operator API, or provide <code className="font-mono">ADMIN_USERNAME</code> /{" "}
+            <code className="font-mono">ADMIN_PASSWORD</code> as a fallback, then redeploy.
           </span>
         </div>
       ) : null}

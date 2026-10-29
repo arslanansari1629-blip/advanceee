@@ -1,420 +1,516 @@
 import Link from "next/link";
 import {
   Activity,
+  ArrowRight,
   ArrowUpRight,
   Bot,
   CircleAlert,
-  Clock4,
-  Cpu,
-  Gauge as GaugeIcon,
+  CircleCheck,
+  Database,
+  Gauge,
+  Globe,
+  Megaphone,
+  MessageSquare,
+  Package,
   Radio,
-  Sparkles,
-  Timer,
-  TrendingUp,
-  Users2,
-  Wallet,
+  Repeat2,
+  ShieldAlert,
+  Users,
   Zap,
 } from "lucide-react";
-import { TrafficCard } from "@/components/overview-charts";
-import { LogConsole } from "@/components/log-console";
-import { ActionButton, ExportButton } from "@/components/actions";
-import { Gauge, Donut } from "@/components/charts";
-import {
-  Avatar,
-  Badge,
-  Card,
-  CardHead,
-  Dot,
-  Metric,
-  PageHeader,
-  Progress,
-  Sparkline,
-  StatusBadge,
-} from "@/components/ui";
-import {
-  bots,
-  botOwner,
-  incidents,
-  kpis,
-  libraryMix,
-  logs,
-  overviewSeries,
-  planMix,
-  revenueSeries,
-  statusMix,
-  topBots,
-  users,
-} from "@/lib/data";
-import { fmt, money, pct, relTime } from "@/lib/format";
+import { ConnectionState } from "@/components/connection-state";
+import { RefreshButton } from "@/components/refresh-button";
+import { Avatar, Badge, Card, CardHead, EmptyState, Mono, PageHeader, PlanBadge, Progress, StatusBadge } from "@/components/ui";
+import { cn, clockUTC, fmt, pct, since, stampUTC, timeAgo } from "@/lib/format";
+import { loadAdminState } from "@/lib/session";
 
-export const metadata = { title: "Overview · BotForge Admin" };
+export const dynamic = "force-dynamic";
 
-export default function OverviewPage() {
-  const ranges = ["24h", "7d", "30d", "90d"] as const;
-  const seriesByRange = Object.fromEntries(ranges.map((r) => [r, overviewSeries(r)])) as Record<
-    (typeof ranges)[number],
-    ReturnType<typeof overviewSeries>
-  >;
+function Stat({
+  label,
+  value,
+  sub,
+  icon,
+  tone = "#34e0a1",
+  href,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  icon: React.ReactNode;
+  tone?: string;
+  href?: string;
+}) {
+  const body = (
+    <>
+      <div className="flex items-center justify-between">
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint">{label}</span>
+        <span className="text-faint" style={{ color: tone }}>
+          {icon}
+        </span>
+      </div>
+      <div className="mt-2 text-[25px] font-semibold leading-none tracking-[-0.02em] text-ink">{value}</div>
+      <div className="mt-2 text-[11px] leading-snug text-faint">{sub}</div>
+    </>
+  );
+  return href ? (
+    <Link href={href} className="panel p-4 transition-colors hover:border-faint/50">
+      {body}
+    </Link>
+  ) : (
+    <div className="panel p-4">{body}</div>
+  );
+}
 
-  const planColors: Record<string, string> = { free: "#5c6880", pro: "#8b7cff", scale: "#34e0a1" };
-  const planData = planMix.map((p) => ({ label: p.plan, value: p.users, color: planColors[p.plan] }));
+function Row({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-line/60 py-2 last:border-0">
+      <span className="text-[11.5px] text-faint">{label}</span>
+      <span className={cn("text-right text-[12px] text-ink", mono && "font-mono text-[11.5px]")}>{value}</span>
+    </div>
+  );
+}
+
+export default async function OverviewPage() {
+  const now = Date.now();
+  const state = await loadAdminState();
+
+  if (state.state !== "ok") {
+    return (
+      <>
+        <PageHeader eyebrow="overview" title="Overview" subtitle="Live product data — nothing cached, nothing simulated." />
+        <ConnectionState state={state} />
+      </>
+    );
+  }
+
+  const { data, latencyMs, baseUrl } = state;
+  const { stats, settings, engine, bots, users } = data;
+  const host = baseUrl.replace(/^https?:\/\//, "");
+
+  const livePct = stats.bots ? (stats.live / stats.bots) * 100 : 0;
+  const successShare = stats.updates ? (stats.replies / stats.updates) * 100 : 0;
+  const errored = bots.filter((b) => b.status === "error");
+  const suspended = users.filter((u) => u.plan === "suspended");
+  const busiest = [...bots].sort((a, b) => b.updates - a.updates).slice(0, 6);
+  const newest = [...users].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5);
+
+  const planMix = Object.entries(
+    users.reduce<Record<string, number>>((acc, u) => {
+      const key = u.plan || "free";
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {}),
+  ).sort((a, b) => b[1] - a[1]);
+
+  const statusMix = [
+    { label: "Live", count: stats.live, color: "#34e0a1" },
+    { label: "Draft", count: stats.drafts, color: "#7c879e" },
+    { label: "Paused", count: stats.paused, color: "#f5b544" },
+    { label: "Error", count: stats.errors, color: "#ff5d6c" },
+  ].filter((s) => s.count > 0);
+
+  const attention: { title: string; detail: string; href: string; tone: "danger" | "warn" | "accent" }[] = [];
+  for (const bot of errored) {
+    attention.push({
+      title: `${bot.name} failed`,
+      detail: bot.lastError ?? "No error message reported by the product",
+      href: `/admin/bots/${bot.id}`,
+      tone: "danger",
+    });
+  }
+  if (stats.suspended > 0) {
+    attention.push({
+      title: `${stats.suspended} suspended account${stats.suspended === 1 ? "" : "s"}`,
+      detail: "Plan is set to suspended on the product",
+      href: "/admin/users?plan=suspended",
+      tone: "warn",
+    });
+  }
+  if (settings.maintenance) {
+    attention.push({
+      title: "Maintenance mode is active",
+      detail: settings.maintenanceMessage || "Users cannot sign in while this is on",
+      href: "/admin/settings",
+      tone: "accent",
+    });
+  }
+  if (!engine.online) {
+    attention.push({
+      title: "Webhook engine offline",
+      detail: `Runner mode: ${engine.mode}`,
+      href: "/admin/system",
+      tone: "warn",
+    });
+  }
 
   return (
     <>
       <PageHeader
-        eyebrow="Fleet control"
-        title="Good evening, Arslan"
-        subtitle="Every bot, every update, every dollar — one console. Traffic is 12.4% above last week and the engine is answering in under 200ms at p95."
+        eyebrow={`live · ${host}`}
+        title="Overview"
+        subtitle={`Read from ${baseUrl}/api/admin/data at ${clockUTC(now)} UTC (${clockUTC(now - latencyMs)} → ${latencyMs} ms round-trip). Reloading re-reads the product — there is no local copy.`}
         actions={
           <>
-            <ExportButton
-              filename="botforge-fleet.csv"
-              rows={[
-                ["bot", "owner", "status", "library", "updates_24h", "success_rate", "p95_ms", "region"],
-                ...bots.map((b) => [
-                  b.slug,
-                  botOwner(b).email,
-                  b.status,
-                  b.library,
-                  b.updates24h,
-                  b.successRate,
-                  b.p95,
-                  b.region,
-                ]),
-              ]}
-            />
-            <Link href="/admin/logs" className="btn">
-              <Radio size={13} /> Live logs
-            </Link>
-            <Link href="/admin/bots?new=1" className="btn-primary">
-              <Zap size={13} strokeWidth={2.6} /> Deploy bot
-            </Link>
+            <RefreshButton />
+            <a href={`${baseUrl}/console`} target="_blank" rel="noreferrer" className="btn-primary h-8 text-[12px]">
+              Product console <ArrowUpRight size={13} strokeWidth={2.6} />
+            </a>
           </>
         }
       />
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Metric
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
           label="Live bots"
-          value={`${kpis.liveBots}`}
-          delta={{ value: "3 this week" }}
-          hint={`of ${kpis.totalBots} deployed`}
-          spark={[8, 9, 9, 11, 12, 12, 13, 14, 15]}
-          icon={<Bot size={13} />}
+          value={fmt(stats.live)}
+          sub={`${stats.bots} total · ${pct(livePct, 0)} running webhooks`}
+          icon={<Radio size={14} />}
+          href="/admin/bots?status=live"
         />
-        <Metric
-          label="Updates · 24h"
-          value={fmt(kpis.updates24h)}
-          delta={{ value: "12.4%" }}
-          hint="vs yesterday"
-          spark={seriesByRange["24h"].updates}
-          icon={<Activity size={13} />}
+        <Stat
+          label="Accounts"
+          value={fmt(stats.users)}
+          sub={
+            stats.suspended > 0
+              ? `${stats.suspended} suspended · signups ${settings.signupsOpen ? "open" : "closed"}`
+              : `0 suspended · signups ${settings.signupsOpen ? "open" : "closed"}`
+          }
+          icon={<Users size={14} />}
+          tone="#8b7cff"
+          href="/admin/users"
         />
-        <Metric
-          label="Success rate"
-          value={pct(kpis.successRate, 2)}
-          delta={{ value: "0.04pt" }}
-          hint="1.4k replies/min"
-          spark={[99.8, 99.86, 99.9, 99.88, 99.92, 99.94, 99.92]}
-          icon={<GaugeIcon size={13} />}
+        <Stat
+          label="Updates handled"
+          value={fmt(stats.updates)}
+          sub={`${fmt(stats.replies)} replies · ${pct(successShare, 0)} answered`}
+          icon={<MessageSquare size={14} />}
+          tone="#4cc9f0"
         />
-        <Metric
-          label="p95 latency"
-          value={`${kpis.p95} ms`}
-          delta={{ value: "9 ms", positive: false }}
-          hint="budget 250 ms"
-          spark={[210, 198, 204, 190, 186, 192, 186]}
-          color="#f5b544"
-          icon={<Timer size={13} />}
-        />
-        <Metric
-          label="MRR"
-          value={money(kpis.mrr)}
-          delta={{ value: "8.1%" }}
-          hint={`${kpis.paidUsers} paying · ARPU $${kpis.arpu}`}
-          spark={revenueSeries.map((r) => r.mrr)}
-          color="#8b7cff"
-          icon={<Wallet size={13} />}
+        <Stat
+          label="Failing bots"
+          value={fmt(stats.errors)}
+          sub={errored[0]?.lastError ? errored[0].lastError.slice(0, 52) : "No bot is reporting an error"}
+          icon={<CircleAlert size={14} />}
+          tone={stats.errors > 0 ? "#ff5d6c" : "#34e0a1"}
+          href="/admin/bots?status=error"
         />
       </div>
 
-      {/* main grid */}
-      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          <TrafficCard data={seriesByRange} mrrByDay={revenueSeries.map((r) => r.mrr)} />
-        </div>
-
-        <Card className="flex flex-col">
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <Card className="overflow-hidden">
           <CardHead
-            title="Engine health"
-            subtitle="webhook process · last 60 min"
-            action={<Badge tone="success">nominal</Badge>}
+            title="Fleet composition"
+            subtitle="Status counts exactly as the product reports them"
+            action={<Bot size={14} className="text-faint" />}
           />
-          <div className="mt-3 flex items-center justify-around px-3">
-            <Gauge value={99.99} label="uptime" />
-            <Gauge value={82.4} label="error budget" color="#8b7cff" />
+          <div className="px-5 pb-4 pt-3">
+            <div className="flex h-2 w-full overflow-hidden rounded-full bg-line/70">
+              {statusMix.map((s) => (
+                <div key={s.label} style={{ width: `${(s.count / stats.bots) * 100}%`, background: s.color }} title={`${s.label}: ${s.count}`} />
+              ))}
+            </div>
+            <div className="mt-3 space-y-2">
+              {statusMix.length === 0 ? <p className="text-[11.5px] text-faint">No bots exist on the product yet.</p> : null}
+              {statusMix.map((s) => (
+                <div key={s.label} className="flex items-center gap-2 text-[12px]">
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.color }} />
+                  <span className="flex-1 text-muted">{s.label}</span>
+                  <span className="tabular-nums text-ink">{s.count}</span>
+                  <span className="w-10 text-right tabular-nums text-[11px] text-faint">
+                    {pct((s.count / stats.bots) * 100, 0)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 border-t border-line/60 pt-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-faint">Restarts</p>
+                <p className="mt-0.5 text-[15px] font-semibold text-ink">{fmt(stats.restarts)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-faint">Packages</p>
+                <p className="mt-0.5 text-[15px] font-semibold text-ink">{fmt(stats.packages)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-faint">Replies</p>
+                <p className="mt-0.5 text-[15px] font-semibold text-ink">{fmt(stats.replies)}</p>
+              </div>
+            </div>
           </div>
-          <div className="mt-1 space-y-2.5 px-5 pb-1">
-            {[
-              { label: "Cold starts", value: "0.4%", bar: 4, tone: "#34e0a1" },
-              { label: "429 retries", value: "0.08%", bar: 8, tone: "#f5b544" },
-              { label: "Queue depth", value: "12", bar: 12, tone: "#4cc9f0" },
-              { label: "Compile backlog", value: "1", bar: 3, tone: "#8b7cff" },
-            ].map((row) => (
-              <div key={row.label}>
-                <div className="flex items-center justify-between text-[11.5px]">
-                  <span className="text-muted">{row.label}</span>
-                  <span className="font-mono text-[11px] text-ink">{row.value}</span>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <CardHead
+            title="Engine & storage"
+            subtitle={`Runner mode ${engine.mode}`}
+            action={<Badge tone={engine.online ? "success" : "danger"}>{engine.online ? "online" : "offline"}</Badge>}
+          />
+          <div className="px-5 pb-3 pt-1">
+            <Row label="Storage adapter" value={<Mono>{data.storage}</Mono>} />
+            <Row label="Engine state" value={engine.online ? "accepting updates" : "not accepting updates"} />
+            <Row label="Operator round-trip" value={`${latencyMs} ms`} />
+            <Row label="Snapshot read at" value={<Mono>{clockUTC(now)}Z</Mono>} />
+            <Row
+              label="Maintenance"
+              value={
+                settings.maintenance ? (
+                  <span className="text-[#f7c66b]">on</span>
+                ) : (
+                  <span className="text-[#5eeac0]">off</span>
+                )
+              }
+            />
+            <Row label="Signups" value={settings.signupsOpen ? "open" : "closed"} />
+          </div>
+          <div className="flex items-center gap-2 border-t border-line/60 px-5 py-2.5 text-[11px] text-faint">
+            <Database size={11} /> live adapter — not a mirror of another database
+          </div>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <CardHead
+            title="Plan mix"
+            subtitle={`${users.length} accounts, grouped by plan`}
+            action={<Users size={14} className="text-faint" />}
+          />
+          <div className="space-y-2.5 px-5 pb-4 pt-3">
+            {planMix.length === 0 ? <p className="text-[11.5px] text-faint">No accounts yet.</p> : null}
+            {planMix.map(([plan, count]) => (
+              <div key={plan}>
+                <div className="mb-1 flex items-center justify-between text-[11.5px]">
+                  <span className="flex items-center gap-1.5">
+                    <PlanBadge plan={plan} />
+                  </span>
+                  <span className="text-muted">
+                    <span className="text-ink">{count}</span> · {pct((count / users.length) * 100, 0)}
+                  </span>
                 </div>
-                <div className="mt-1">
-                  <Progress value={Math.max(3, row.bar * 4)} height={3} color={row.tone} />
-                </div>
+                <Progress value={(count / users.length) * 100} height={4} color={plan === "suspended" ? "#ff5d6c" : "rgb(var(--brand))"} />
               </div>
             ))}
-          </div>
-          <div className="mt-auto grid grid-cols-3 divide-x divide-line/70 border-t border-line/70 text-center">
-            {[
-              { label: "regions", value: "5" },
-              { label: "avg reply", value: "41 ms" },
-              { label: "errors 1h", value: "17" },
-            ].map((s) => (
-              <div key={s.label} className="px-2 py-2">
-                <div className="font-mono text-[12px] text-ink">{s.value}</div>
-                <div className="text-[9.5px] uppercase tracking-wide text-faint">{s.label}</div>
+            {settings.broadcast ? (
+              <div className="mt-3 flex gap-2 rounded-lg border border-[#8b7cff]/25 bg-[#8b7cff]/[0.07] p-2.5">
+                <Megaphone size={13} className="mt-0.5 shrink-0 text-[#b3a8ff]" />
+                <p className="line-clamp-3 text-[11.5px] leading-relaxed text-[#c9c2ff]">{settings.broadcast}</p>
               </div>
-            ))}
+            ) : (
+              <p className="mt-3 flex items-center gap-1.5 text-[11px] text-faint">
+                <Megaphone size={11} /> No broadcast banner is set.
+              </p>
+            )}
           </div>
         </Card>
       </div>
 
-      {/* top bots + plan mix */}
-      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-3">
-        <Card className="overflow-hidden xl:col-span-2">
+      <div className="mt-3 grid gap-3 lg:grid-cols-[1.35fr_1fr]">
+        <Card className="overflow-hidden">
           <CardHead
             title="Busiest bots"
-            subtitle="sorted by updates in the last 24 hours"
+            subtitle="Ranked by updates the product has counted per bot"
             action={
-              <Link href="/admin/bots" className="btn-ghost h-7 px-2 text-[11.5px]">
-                All {bots.length} bots <ArrowUpRight size={11} />
+              <Link href="/admin/bots" className="flex items-center gap-1 text-[11.5px] text-muted hover:text-ink">
+                All bots <ArrowRight size={11} />
               </Link>
             }
           />
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse">
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[520px]">
               <thead>
-                <tr className="border-y border-line/70 bg-canvas/30">
+                <tr className="border-y border-line/60 bg-raised/30">
                   <th className="th">Bot</th>
-                  <th className="th">Owner</th>
                   <th className="th">Status</th>
-                  <th className="th text-right">Updates 24h</th>
-                  <th className="th">Trend</th>
-                  <th className="th text-right">Success</th>
-                  <th className="th text-right">p95</th>
+                  <th className="th text-right">Updates</th>
+                  <th className="th text-right">Replies</th>
+                  <th className="th text-right">Uptime</th>
+                  <th className="th text-right">Owner</th>
                 </tr>
               </thead>
               <tbody>
-                {topBots.map((b) => {
-                  const owner = botOwner(b);
-                  return (
-                    <tr key={b.id} className="group border-b border-line/50 transition-colors last:border-0 hover:bg-raised/40">
-                      <td className="td">
-                        <Link href={`/admin/bots/${b.id}`} className="flex items-center gap-2">
-                          <span className="flex h-6 w-6 items-center justify-center rounded-md border border-line bg-raised/70 font-mono text-[10px] text-muted group-hover:border-brand/40 group-hover:text-brand">
-                            {b.name.slice(0, 1)}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block truncate text-[12.5px] font-medium text-ink">{b.name}</span>
-                            <span className="block truncate font-mono text-[10px] text-faint">{b.handle}</span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td className="td">
-                        <span className="flex items-center gap-1.5">
-                          <Avatar name={owner.name} color={owner.color} size={18} />
-                          <span className="text-[11.5px]">{owner.name.split(" ")[0]}</span>
+                {busiest.length === 0 ? (
+                  <tr>
+                    <td colSpan={6}>
+                      <EmptyState title="No bots on the product" body="Deployed bots appear here as soon as they exist." />
+                    </td>
+                  </tr>
+                ) : null}
+                {busiest.map((bot) => (
+                  <tr key={bot.id} className="border-b border-line/40 transition-colors last:border-0 hover:bg-raised/40">
+                    <td className="td">
+                      <Link href={`/admin/bots/${bot.id}`} className="flex items-center gap-2 text-ink hover:text-brand">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-raised text-faint">
+                          <Bot size={12} />
                         </span>
-                      </td>
-                      <td className="td">
-                        <StatusBadge status={b.status} pulse />
-                      </td>
-                      <td className="td text-right font-mono text-[12px] text-ink">{fmt(b.updates24h)}</td>
-                      <td className="td">
-                        <Sparkline data={b.updates7d.slice(-10)} color={b.status === "error" ? "#ff5d6c" : "#34e0a1"} width={70} height={20} />
-                      </td>
-                      <td className="td text-right font-mono text-[11.5px]">{b.successRate.toFixed(2)}%</td>
-                      <td className="td text-right font-mono text-[11.5px]">{b.p95} ms</td>
-                    </tr>
-                  );
-                })}
+                        <span className="min-w-0">
+                          <span className="block truncate text-[12.5px] font-medium">{bot.name}</span>
+                          <span className="block truncate text-[10.5px] text-faint">{bot.username ? `@${bot.username}` : bot.id}</span>
+                        </span>
+                      </Link>
+                    </td>
+                    <td className="td">
+                      <StatusBadge status={bot.status} pulse />
+                    </td>
+                    <td className="td text-right tabular-nums text-ink">{fmt(bot.updates)}</td>
+                    <td className="td text-right tabular-nums">{fmt(bot.replies)}</td>
+                    <td className="td text-right tabular-nums">{bot.stats.uptimePct ? pct(bot.stats.uptimePct) : "—"}</td>
+                    <td className="td text-right">
+                      <span className="text-[11.5px]">{bot.ownerName || bot.ownerEmail}</span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </Card>
 
-        <div className="flex flex-col gap-3">
-          <Card className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-[13px] font-semibold text-ink">Plan mix</h3>
-                <p className="text-[11.5px] text-faint">{kpis.users} accounts</p>
-              </div>
-              <Link href="/admin/users" className="text-[11px] text-faint hover:text-ink">
-                manage →
-              </Link>
-            </div>
-            <div className="mt-3 flex items-center gap-4">
-              <Donut data={planData} centerValue={`${kpis.paidUsers}`} centerLabel="paying" size={124} thickness={12} />
-              <div className="flex-1 space-y-2">
-                {planMix.map((p) => (
-                  <div key={p.plan} className="flex items-center justify-between text-[11.5px]">
-                    <span className="flex items-center gap-1.5 capitalize text-muted">
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: planColors[p.plan] }} />
-                      {p.plan}
-                    </span>
-                    <span className="font-mono text-[11px] text-ink">{money(p.revenue)}/mo</span>
+        <div className="space-y-3">
+          <Card className="overflow-hidden">
+            <CardHead
+              title="Needs attention"
+              subtitle="Derived from bot status, plan and platform flags"
+              action={
+                <Badge tone={attention.length ? "danger" : "success"}>
+                  {attention.length ? `${attention.length} item${attention.length === 1 ? "" : "s"}` : "all clear"}
+                </Badge>
+              }
+            />
+            <div className="mt-2">
+              {attention.length === 0 ? (
+                <div className="flex items-center gap-2.5 px-5 py-6">
+                  <CircleCheck size={16} className="text-brand" />
+                  <div>
+                    <p className="text-[12.5px] font-medium text-ink">Nothing needs attention</p>
+                    <p className="text-[11px] text-faint">
+                      No errored bots, no suspended accounts, maintenance off
+                      {engine.online ? " and the engine is online." : "."}
+                    </p>
                   </div>
-                ))}
-                <div className="flex items-center justify-between border-t border-line/70 pt-2 text-[11.5px]">
-                  <span className="text-faint">churn</span>
-                  <span className="font-mono text-[11px] text-[#4fdfb0]">{kpis.churn}%</span>
                 </div>
-              </div>
+              ) : null}
+              {attention.map((item) => (
+                <Link
+                  key={item.title}
+                  href={item.href}
+                  className="flex items-start gap-2.5 border-b border-line/50 px-5 py-3 transition-colors last:border-0 hover:bg-raised/40"
+                >
+                  <span
+                    className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+                    style={{
+                      background:
+                        item.tone === "danger"
+                          ? "rgb(255 93 108 / 0.12)"
+                          : item.tone === "warn"
+                            ? "rgb(245 181 68 / 0.12)"
+                            : "rgb(139 124 255 / 0.12)",
+                      color: item.tone === "danger" ? "#ff929c" : item.tone === "warn" ? "#f7c66b" : "#b3a8ff",
+                    }}
+                  >
+                    <ShieldAlert size={12} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12px] font-medium text-ink">{item.title}</span>
+                    <span className="mt-0.5 block truncate text-[11px] text-faint">{item.detail}</span>
+                  </span>
+                  <ArrowRight size={12} className="mt-1 shrink-0 text-faint" />
+                </Link>
+              ))}
             </div>
           </Card>
 
-          <Card className="flex-1 p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[13px] font-semibold text-ink">Fleet composition</h3>
-              <Link href="/admin/bots" className="text-[11px] text-faint hover:text-ink">
-                inspect →
-              </Link>
-            </div>
-            <div className="mt-3 space-y-2.5">
-              {statusMix.map((s) => {
-                const colors: Record<string, string> = {
-                  live: "#34e0a1",
-                  paused: "#f5b544",
-                  error: "#ff5d6c",
-                  draft: "#5c6880",
-                  compiling: "#8b7cff",
-                };
-                return (
-                  <div key={s.status}>
-                    <div className="flex items-center justify-between text-[11.5px]">
-                      <span className="flex items-center gap-1.5 capitalize text-muted">
-                        <Dot color={colors[s.status]} /> {s.status}
-                      </span>
-                      <span className="font-mono text-[11px] text-ink">{s.count}</span>
-                    </div>
-                    <div className="mt-1">
-                      <Progress value={(s.count / bots.length) * 100} height={3} color={colors[s.status]} />
-                    </div>
+          <Card className="overflow-hidden">
+            <CardHead
+              title="Newest accounts"
+              subtitle="Sorted by the product's createdAt"
+              action={
+                <Link href="/admin/users" className="flex items-center gap-1 text-[11.5px] text-muted hover:text-ink">
+                  All <ArrowRight size={11} />
+                </Link>
+              }
+            />
+            <div className="mt-1">
+              {newest.length === 0 ? <EmptyState title="No accounts yet" /> : null}
+              {newest.map((user) => (
+                <div key={user.id} className="flex items-center gap-2.5 border-b border-line/50 px-5 py-2.5 last:border-0">
+                  <Avatar name={user.name || user.email} size={24} color="#8b7cff" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[12px] font-medium text-ink">{user.name || user.email}</p>
+                    <p className="truncate text-[10.5px] text-faint">
+                      {user.email} · {timeAgo(user.createdAt, now)}
+                    </p>
                   </div>
-                );
-              })}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-1.5 border-t border-line/70 pt-3">
-              {libraryMix.map((l) => (
-                <span key={l.label} className="chip text-[9.5px]">
-                  {l.label} · {l.value}
-                </span>
+                  <PlanBadge plan={user.plan} />
+                </div>
               ))}
             </div>
           </Card>
         </div>
       </div>
 
-      {/* logs + incidents */}
-      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          <LogConsole initial={logs.slice(-40)} compact botList={bots.map((b) => b.slug)} />
-        </div>
-        <div className="flex flex-col gap-3">
-          <Card className="p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
-                <CircleAlert size={13} className="text-[#f5b544]" /> Active incidents
-              </h3>
-              <Link href="/admin/health" className="text-[11px] text-faint hover:text-ink">
-                status page →
-              </Link>
-            </div>
-            <div className="mt-3 space-y-2.5">
-              {incidents.slice(0, 3).map((i) => (
-                <div key={i.id} className="rounded-lg border border-line/70 bg-canvas/40 p-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[10px] text-faint">{i.id}</span>
-                    <Badge tone={i.severity === "critical" ? "danger" : i.severity === "major" ? "warn" : "info"}>
-                      {i.severity}
-                    </Badge>
-                  </div>
-                  <p className="mt-1 text-[11.5px] font-medium leading-snug text-ink">{i.title}</p>
-                  <div className="mt-1 flex items-center gap-2 text-[10px] text-faint">
-                    <span className="flex items-center gap-1">
-                      <Clock4 size={9} /> {relTime(i.started)}
-                    </span>
-                    <span>·</span>
-                    <span className="capitalize">{i.status}</span>
-                    <span>·</span>
-                    <span>{i.duration}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          <Card className="p-4">
-            <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
-              <Sparkles size={13} className="text-[#b3a8ff]" /> Quick actions
-            </h3>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <Link href="/admin/bots?new=1" className="btn h-auto flex-col items-start gap-1 px-2.5 py-2 text-[11px]">
-                <Zap size={13} className="text-brand" />
-                Deploy bot
-              </Link>
-              <Link href="/admin/logs" className="btn h-auto flex-col items-start gap-1 px-2.5 py-2 text-[11px]">
-                <Radio size={13} className="text-[#7edcf7]" />
-                Tail logs
-              </Link>
-              <Link href="/admin/users" className="btn h-auto flex-col items-start gap-1 px-2.5 py-2 text-[11px]">
-                <Users2 size={13} className="text-[#b3a8ff]" />
-                Invite user
-              </Link>
-              <Link href="/admin/tickets" className="btn h-auto flex-col items-start gap-1 px-2.5 py-2 text-[11px]">
-                <Cpu size={13} className="text-[#f7c66b]" />
-                Triage inbox
-              </Link>
-            </div>
-          </Card>
-        </div>
-      </div>
-
-      {/* mini stats strip */}
-      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-        {[
-          { label: "New users · 7d", value: fmt(kpis.newUsers7d), delta: "+18.2%", icon: <TrendingUp size={12} /> },
-          { label: "Deploys · 24h", value: `${kpis.deploys24h}`, delta: `${kpis.avgDeploySeconds}s avg`, icon: <Zap size={12} /> },
-          { label: "Error rate", value: `${kpis.errorRate}%`, delta: "-0.02pt", icon: <CircleAlert size={12} /> },
-          { label: "Support backlog", value: "3 open", delta: "1 urgent", icon: <Activity size={12} /> },
-        ].map((s) => (
-          <div key={s.label} className="panel flex items-center gap-3 p-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-raised/60 text-muted">
-              {s.icon}
-            </span>
-            <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-[0.08em] text-faint">{s.label}</div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-[14px] font-semibold text-ink">{s.value}</span>
-                <span className="text-[10px] text-faint">{s.delta}</span>
-              </div>
-            </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="panel flex items-center gap-3 p-4">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand/10 text-brand">
+            <Gauge size={15} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[10.5px] uppercase tracking-wide text-faint">Restarts</p>
+            <p className="text-[13px] text-ink">
+              {fmt(stats.restarts)} total across {stats.bots} bots
+            </p>
           </div>
-        ))}
+        </div>
+        <div className="panel flex items-center gap-3 p-4">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#4cc9f0]/10 text-[#7edcf7]">
+            <Package size={15} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[10.5px] uppercase tracking-wide text-faint">Declared packages</p>
+            <p className="text-[13px] text-ink">{fmt(stats.packages)} across all bots</p>
+          </div>
+        </div>
+        <div className="panel flex items-center gap-3 p-4">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#8b7cff]/10 text-[#b3a8ff]">
+            <Repeat2 size={15} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[10.5px] uppercase tracking-wide text-faint">Replies sent</p>
+            <p className="text-[13px] text-ink">
+              {fmt(stats.replies)} · {pct(successShare, 0)} of updates
+            </p>
+          </div>
+        </div>
+        <div className="panel flex items-center gap-3 p-4">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#f5b544]/10 text-[#f7c66b]">
+            <Activity size={15} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[10.5px] uppercase tracking-wide text-faint">Uptime signal</p>
+            <p className="text-[13px] text-ink">
+              {bots.length
+                ? `${pct(bots.reduce((sum, b) => sum + (b.stats.uptimePct || 0), 0) / bots.length)} avg per bot`
+                : "no bots to measure"}
+            </p>
+          </div>
+        </div>
       </div>
-      <div className="mt-5 flex items-center justify-between text-[10.5px] text-faint">
-        <span>Last refreshed {relTime(new Date().toISOString())} · demo dataset, deterministic seed 20261029</span>
-        <ActionButton label="Refresh data" icon={<Activity size={11} />} kind="success" title="Metrics refreshed" body="Snapshot pulled from the edge cache · 41ms" variant="ghost" className="h-6 text-[10.5px]" />
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-faint">
+        <span className="flex items-center gap-1.5">
+          <Zap size={10} className="text-brand" /> source: {baseUrl}/api/admin/data
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Globe size={10} /> snapshot {stampUTC(now)}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Radio size={10} /> engine {engine.online ? "online" : "offline"} · {engine.mode}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Database size={10} /> {data.storage}
+        </span>
+        {errored.length ? (
+          <span className="flex items-center gap-1.5 text-[#ff929c]">
+            <CircleAlert size={10} /> newest fault {since(errored[0].createdAt, now)} old
+          </span>
+        ) : null}
       </div>
     </>
   );

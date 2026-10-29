@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Activity, Bot, ShieldCheck, Terminal, Zap } from "lucide-react";
 import { LoginForm } from "@/components/login-form";
 import { SESSION_COOKIE, isAuthConfigured, readSession } from "@/lib/auth";
+import { PRODUCT_BASE, isProductConfigured } from "@/lib/product";
 
 export const metadata: Metadata = { title: "Sign in · BotForge Admin" };
 
@@ -44,16 +45,16 @@ export default async function LoginPage({
               every live bot.
             </h1>
             <p className="mt-2 max-w-[300px] text-[12px] leading-relaxed text-muted">
-              Fleet control, streaming logs, revenue and incident response for BotForge Cloud — all in one signed
-              session.
+              A read-through view of the live BotForge Cloud product: bots, accounts, platform flags and engine
+              diagnostics. Nothing is stored here.
             </p>
 
             <div className="mt-5 space-y-2">
               {[
-                { icon: Bot, text: "34 bots · 27 live · webhook engine v3" },
-                { icon: Activity, text: "1.6M updates answered in the last 24h" },
-                { icon: Terminal, text: "Live log stream with SSE backfill" },
-                { icon: ShieldCheck, text: "Audit trail on every privileged action" },
+                { icon: Bot, text: "Every bot and account, read from the product" },
+                { icon: Activity, text: "Statuses, restarts and faults as they are stored" },
+                { icon: Terminal, text: "Platform flags written straight back" },
+                { icon: ShieldCheck, text: "No fixtures — an empty product shows empty screens" },
               ].map((row) => {
                 const Icon = row.icon;
                 return (
@@ -69,9 +70,9 @@ export default async function LoginPage({
           </div>
 
           <div className="rounded-xl border border-line/80 bg-canvas/50 p-3 font-mono text-[10px] leading-relaxed text-[#8ea7c9]">
-            <div className="text-faint">› getMe → @forge_echo_bot · ok (118 ms)</div>
-            <div className="text-faint">› setWebhook → /api/tg/b_7f31 · registered</div>
-            <div className="text-[#5eeac0]">› reply → “Hey Arslan! I am live 24/7.” (41 ms)</div>
+            <div className="text-faint">› POST /api/admin/login</div>
+            <div className="text-faint">› GET&nbsp; /api/admin/data</div>
+            <div className="text-[#5eeac0]">› render → live payload, no local copy</div>
           </div>
         </div>
 
@@ -90,16 +91,16 @@ export default async function LoginPage({
             </span>
             <h2 className="mt-2.5 text-[19px] font-semibold tracking-[-0.02em] text-ink">Sign in</h2>
             <p className="mt-1 text-[12px] text-muted">
-              Use the admin credentials for this workspace to open the console.
+              Sign in with the BotForge operator credentials — the product issues the session this console reads with.
             </p>
           </div>
 
-          <LoginForm configured={isAuthConfigured()} loggedOut={Boolean(searchParams.out)} />
+          <LoginForm configured={isAuthConfigured() || isProductConfigured()} loggedOut={Boolean(searchParams.out)} />
 
           <div className="mt-5 flex items-center justify-between border-t border-line/70 pt-3 text-[10.5px] text-faint">
-            <Link href="https://botforge-cloud.vercel.app" className="transition-colors hover:text-ink">
-              ← botforge-cloud.vercel.app
-            </Link>
+            <a href={PRODUCT_BASE} className="truncate transition-colors hover:text-ink">
+              ← {PRODUCT_BASE.replace(/^https?:\/\//, "")}
+            </a>
             <span className="flex items-center gap-1">
               <ShieldCheck size={10} /> protected surface
             </span>

@@ -8,22 +8,30 @@ export function fmt(n: number) {
   return n.toLocaleString("en-US");
 }
 
-export function money(n: number, opts: { cents?: boolean } = {}) {
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: opts.cents ? 2 : 0,
-    maximumFractionDigits: opts.cents ? 2 : 0,
-  });
-}
-
 export function pct(n: number, digits = 1) {
-  return `${n.toFixed(digits)}%`;
+  return `${Number(n.toFixed(digits))}%`;
 }
 
-export function relTime(iso: string, now = new Date()) {
-  const then = new Date(iso).getTime();
-  const diff = Math.max(0, now.getTime() - then);
+export function initials(name: string) {
+  return name
+    .split(/[\s@._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
+}
+
+/**
+ * Timestamps on the product are epoch milliseconds. Everything below renders
+ * them in UTC so the server HTML and the browser agree (no hydration drift).
+ */
+export function diffMs(ts: number, now = Date.now()) {
+  return Math.max(0, now - ts);
+}
+
+export function timeAgo(ts: number | null | undefined, now = Date.now()) {
+  if (!ts) return "—";
+  const diff = diffMs(ts, now);
   const mins = Math.round(diff / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
@@ -35,41 +43,49 @@ export function relTime(iso: string, now = new Date()) {
   return `${months}mo ago`;
 }
 
-export function shortDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+/** Compact duration, e.g. "3d 4h" / "12m". */
+export function since(ts: number | null | undefined, now = Date.now()) {
+  if (!ts) return "—";
+  const mins = Math.floor(diffMs(ts, now) / 60000);
+  if (mins < 1) return "moments";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ${mins % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
 }
 
-export function initials(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join("");
+export function dateAt(ts: number | null | undefined) {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
-export function maskToken(token: string) {
-  return `${token.slice(0, 8)}••••••••${token.slice(-3)}`;
-}
-
-export function bytes(n: number) {
-  if (n < 1024) return `${n} KB`;
-  return `${(n / 1024).toFixed(1)} MB`;
-}
-
-export function clamp(n: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, n));
-}
-
-/** Deterministic UTC stamp for client components (avoids hydration drift). */
-export function stampUTC(iso: string) {
-  const d = new Date(iso);
+export function stampUTC(ts: number | null | undefined) {
+  if (!ts) return "—";
+  const d = new Date(ts);
   const month = d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
   const day = d.toLocaleDateString("en-US", { day: "numeric", timeZone: "UTC" });
   return `${month} ${day} · ${d.toISOString().slice(11, 16)}Z`;
 }
 
-/** Deterministic UTC clock, HH:MM:SS. */
-export function clockUTC(iso: string) {
-  return new Date(iso).toISOString().slice(11, 19);
+export function clockUTC(ts: number) {
+  return new Date(ts).toISOString().slice(11, 19);
+}
+
+/** Split a requirements string ("python-telegram-bot\nrequests") into pinned packages. */
+export function splitRequirements(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[\n,]+/)
+    .map((s) => s.trim())
+    .filter((s) => s && !s.startsWith("#"));
+}
+
+export function shortId(id: string) {
+  return id.length > 12 ? `${id.slice(0, 10)}…` : id;
 }

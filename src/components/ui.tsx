@@ -1,19 +1,19 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn, initials } from "@/lib/format";
-import type { BotStatus, Plan } from "@/lib/types";
+import type { ProductBotStatus } from "@/lib/types";
 
 /* ---------------------------------------------------------------- chips */
 
-const statusStyles: Record<BotStatus, { label: string; cls: string; dot: string }> = {
+const statusStyles: Record<ProductBotStatus, { label: string; cls: string; dot: string }> = {
   live: { label: "Live", cls: "text-[#34e0a1] bg-[#34e0a1]/10 border-[#34e0a1]/25", dot: "#34e0a1" },
   paused: { label: "Paused", cls: "text-[#f5b544] bg-[#f5b544]/10 border-[#f5b544]/25", dot: "#f5b544" },
   error: { label: "Error", cls: "text-[#ff7c88] bg-[#ff5d6c]/10 border-[#ff5d6c]/25", dot: "#ff5d6c" },
   draft: { label: "Draft", cls: "text-[#94a0b8] bg-white/[0.04] border-line", dot: "#7c879e" },
-  compiling: { label: "Compiling", cls: "text-[#8b7cff] bg-[#8b7cff]/10 border-[#8b7cff]/25", dot: "#8b7cff" },
+  deploying: { label: "Deploying", cls: "text-[#8b7cff] bg-[#8b7cff]/10 border-[#8b7cff]/25", dot: "#8b7cff" },
 };
 
-export function StatusBadge({ status, pulse = false }: { status: BotStatus; pulse?: boolean }) {
+export function StatusBadge({ status, pulse = false }: { status: ProductBotStatus; pulse?: boolean }) {
   const s = statusStyles[status];
   return (
     <span
@@ -31,22 +31,26 @@ export function StatusBadge({ status, pulse = false }: { status: BotStatus; puls
   );
 }
 
-const planStyles: Record<Plan, string> = {
+const planStyles: Record<string, string> = {
   free: "border-line bg-white/[0.04] text-muted",
   pro: "border-[#8b7cff]/30 bg-[#8b7cff]/10 text-[#b3a8ff]",
   scale: "border-[#34e0a1]/30 bg-[#34e0a1]/10 text-[#6ff0bf]",
+  founder: "border-[#f5b544]/30 bg-[#f5b544]/10 text-[#f7c66b]",
+  suspended: "border-[#ff5d6c]/30 bg-[#ff5d6c]/10 text-[#ff929c]",
 };
 
-export function PlanBadge({ plan }: { plan: Plan }) {
+/** Plan is a free-form string on the product, so unknown values fall back gracefully. */
+export function PlanBadge({ plan }: { plan: string }) {
+  const key = (plan || "free").toLowerCase();
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-        planStyles[plan],
+        planStyles[key] ?? "border-line bg-white/[0.04] text-muted",
       )}
     >
-      {plan === "scale" && "◆ "}
-      {plan}
+      {key === "scale" || key === "founder" ? "◆ " : ""}
+      {plan || "free"}
     </span>
   );
 }

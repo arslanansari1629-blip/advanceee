@@ -6,139 +6,88 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowRight,
+  ArrowUpRight,
   Bell,
   Bot,
   ChevronsUpDown,
+  CircleCheck,
   CircleHelp,
   Command,
-  CreditCard,
-  Flag,
-  Gauge,
-  Inbox,
-  LayoutDashboard,
-  LifeBuoy,
+  Database,
+  Globe,
   LogOut,
   Menu,
   Moon,
   PanelsTopLeft,
-  Plus,
+  RefreshCw,
   Search,
-  ScrollText,
   Settings,
-  ShieldCheck,
-  Sparkles,
   Sun,
-  Terminal,
+  TriangleAlert,
   Users,
   X,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/format";
 import { Avatar } from "./ui";
-import { useToast } from "./toast";
 
-type NavItem = { href: string; label: string; icon: React.ElementType; badge?: string; hint?: string };
+export type ShellAlert = { title: string; detail: string; href: string; tone: string };
 
-const navSections: { title: string; items: NavItem[] }[] = [
-  {
-    title: "Command",
-    items: [
-      { href: "/admin", label: "Overview", icon: LayoutDashboard, hint: "Fleet KPIs, traffic, revenue" },
-      { href: "/admin/activity", label: "Activity", icon: Activity, badge: "14", hint: "Live event stream" },
-    ],
-  },
-  {
-    title: "Fleet",
-    items: [
-      { href: "/admin/bots", label: "Bots", icon: Bot, badge: "34", hint: "All deployed bots" },
-      { href: "/admin/logs", label: "Live logs", icon: Terminal, hint: "Streaming console" },
-      { href: "/admin/templates", label: "Templates", icon: PanelsTopLeft, hint: "Starter code library" },
-    ],
-  },
-  {
-    title: "Growth",
-    items: [
-      { href: "/admin/users", label: "Users", icon: Users, hint: "Accounts, plans, roles" },
-      { href: "/admin/revenue", label: "Revenue", icon: CreditCard, hint: "MRR, invoices, churn" },
-    ],
-  },
-  {
-    title: "Operations",
-    items: [
-      { href: "/admin/tickets", label: "Support", icon: Inbox, badge: "3", hint: "Tickets & abuse reports" },
-      { href: "/admin/flags", label: "Feature flags", icon: Flag, hint: "Rollouts & kill switches" },
-      { href: "/admin/audit", label: "Audit log", icon: ScrollText, hint: "Every admin action" },
-    ],
-  },
-  {
-    title: "System",
-    items: [
-      { href: "/admin/health", label: "Health", icon: Gauge, hint: "Uptime & incidents" },
-      { href: "/admin/settings", label: "Settings", icon: Settings, hint: "Workspace configuration" },
-    ],
-  },
-];
+export type ShellData = {
+  host: string;
+  storage: string;
+  bots: number;
+  live: number;
+  errors: number;
+  users: number;
+  updates: number;
+  maintenance: boolean;
+  signupsOpen: boolean;
+  connected: boolean;
+  /** What the last product read returned — drives honest status wording. */
+  status: "ok" | "unlinked" | "unauthorized" | "unreachable";
+  alerts: ShellAlert[];
+};
 
-const quickActions = [
-  { label: "Deploy a new bot", href: "/admin/bots?new=1", icon: Plus },
-  { label: "Open live log console", href: "/admin/logs", icon: Terminal },
-  { label: "Review open tickets", href: "/admin/tickets", icon: Inbox },
-  { label: "Toggle feature flags", href: "/admin/flags", icon: Flag },
-  { label: "Audit trail", href: "/admin/audit", icon: ScrollText },
-];
+type NavItem = { href: string; label: string; icon: React.ElementType; hint: string; badge?: string };
 
-const notifications = [
+const navItems: { title: string; items: NavItem[] }[] = [
   {
-    title: "INC-2291 elevated latency in fra1",
-    body: "Webhook p95 812ms · monitoring",
-    tone: "#f5b544",
-    time: "6m",
-    href: "/admin/health",
+    title: "Product",
+    items: [
+      { href: "/admin", label: "Overview", icon: Activity, hint: "Live totals from the product" },
+      { href: "/admin/bots", label: "Bots", icon: Bot, hint: "Every deployed bot" },
+      { href: "/admin/users", label: "Accounts", icon: Users, hint: "Registered users and plans" },
+    ],
   },
   {
-    title: "New abuse report · TCK-4818",
-    body: "Bot impersonating a bank — needs triage",
-    tone: "#ff5d6c",
-    time: "12m",
-    href: "/admin/tickets",
-  },
-  {
-    title: "Compile queue drained",
-    body: "14 pending bots compiled successfully",
-    tone: "#34e0a1",
-    time: "48m",
-    href: "/admin/logs",
-  },
-  {
-    title: "Flag token-rotation-guard at 64%",
-    body: "Rollout progressing in production",
-    tone: "#8b7cff",
-    time: "2h",
-    href: "/admin/flags",
+    title: "Control",
+    items: [
+      { href: "/admin/settings", label: "Platform", icon: Settings, hint: "Maintenance, broadcast, signups" },
+      { href: "/admin/system", label: "System", icon: Database, hint: "Connection, storage, diagnostics" },
+    ],
   },
 ];
 
 export function AppShell({
   children,
   admin,
+  shell,
 }: {
   children: React.ReactNode;
-  admin?: { user: string; name: string };
+  admin?: { user: string; name: string; via: "product" | "local" };
+  shell: ShellData;
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { push } = useToast();
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [menu, setMenu] = useState<"none" | "bell" | "user" | "product">("none");
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
-  const [menu, setMenu] = useState<"none" | "bell" | "user" | "org">("none");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [clock, setClock] = useState("");
-  const [org, setOrg] = useState("BotForge Cloud");
-  const me = admin ?? { user: "admin", name: "Admin" };
-  const meEmail = `${me.user.toLowerCase()}@forge.dev`;
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -150,12 +99,7 @@ export function AppShell({
   useEffect(() => {
     const tick = () =>
       setClock(
-        new Date().toLocaleTimeString("en-GB", {
-          timeZone: "UTC",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
+        new Date().toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit", second: "2-digit" }),
       );
     tick();
     const id = setInterval(tick, 1000);
@@ -196,24 +140,12 @@ export function AppShell({
     }
   }, [paletteOpen]);
 
-  const allNav = navSections.flatMap((s) => s.items);
+  const allNav = navItems.flatMap((section) => section.items);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const navMatches = allNav.filter(
-      (n) => !q || n.label.toLowerCase().includes(q) || (n.hint ?? "").toLowerCase().includes(q),
-    );
-    const actionMatches = quickActions.filter((a) => !q || a.label.toLowerCase().includes(q));
-    return { navMatches, actionMatches };
+    return allNav.filter((n) => !q || n.label.toLowerCase().includes(q) || n.hint.toLowerCase().includes(q));
   }, [query, allNav]);
-
-  const flatResults = useMemo(
-    () => [
-      ...results.navMatches.map((r) => ({ label: r.label, href: r.href, kind: "Page" })),
-      ...results.actionMatches.map((r) => ({ label: r.label, href: r.href, kind: "Action" })),
-    ],
-    [results],
-  );
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -240,21 +172,23 @@ export function AppShell({
   const onPaletteKey = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setCursor((c) => Math.min(flatResults.length - 1, c + 1));
+      setCursor((c) => Math.min(results.length - 1, c + 1));
     }
     if (e.key === "ArrowUp") {
       e.preventDefault();
       setCursor((c) => Math.max(0, c - 1));
     }
-    if (e.key === "Enter" && flatResults[cursor]) {
-      router.push(flatResults[cursor].href);
+    if (e.key === "Enter" && results[cursor]) {
+      router.push(results[cursor].href);
       setPaletteOpen(false);
     }
   };
 
+  const livePct = shell.bots > 0 ? Math.round((shell.live / shell.bots) * 100) : 0;
+  const me = admin ?? { user: "operator", name: "Operator", via: "local" as const };
+
   return (
     <div className="min-h-screen bg-canvas">
-      {/* sidebar */}
       <aside className="sidebar fixed inset-y-0 left-0 z-50 flex flex-col border-r border-line/80 bg-panel" data-open={mobileOpen}>
         <div className="flex h-14 items-center justify-between gap-2 px-3">
           <Link href="/admin" className="group flex items-center gap-2.5 overflow-hidden">
@@ -275,57 +209,71 @@ export function AppShell({
           </button>
         </div>
 
-        {/* org switcher */}
         <div className="relative px-2.5">
           <button
-            onClick={() => setMenu(menu === "org" ? "none" : "org")}
+            onClick={() => setMenu(menu === "product" ? "none" : "product")}
             className="nav-item flex w-full items-center gap-2 rounded-lg border border-line/70 bg-raised/50 px-2 py-1.5 text-left transition-colors hover:border-faint/50"
           >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand/15 text-[10px] font-bold text-brand">
-              BF
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand/15 text-brand">
+              <Globe size={11} />
             </span>
             <span className="sidebar-label min-w-0 flex-1">
-              <span className="block truncate text-[11.5px] font-medium text-ink">{org}</span>
+              <span className="block truncate text-[11.5px] font-medium text-ink">{shell.host}</span>
               <span className="flex items-center gap-1 text-[9.5px] text-faint">
-                <span className="h-1 w-1 rounded-full bg-brand" /> production · scale
+                <span className={cn("h-1 w-1 rounded-full", shell.connected ? "bg-brand" : "bg-[#ff5d6c]")} />
+                {shell.connected ? `${shell.storage} storage` : "not connected"}
               </span>
             </span>
             <ChevronsUpDown size={12} className="sidebar-label shrink-0 text-faint" />
           </button>
-          {menu === "org" ? (
+          {menu === "product" ? (
             <div className="absolute left-2.5 right-2.5 top-full z-50 mt-1 overflow-hidden rounded-lg border border-line bg-panel shadow-pop">
-              {["BotForge Cloud", "Arslan Labs", "Demo workspace"].map((o) => (
-                <button
-                  key={o}
-                  onClick={() => {
-                    setOrg(o);
-                    setMenu("none");
-                    push({ kind: "info", title: "Workspace switched", body: `${o} · production` });
-                  }}
-                  className={cn(
-                    "flex w-full items-center justify-between px-3 py-2 text-[12px] transition-colors hover:bg-raised",
-                    o === org ? "text-ink" : "text-muted",
-                  )}
-                >
-                  {o}
-                  {o === org ? <span className="text-[10px] text-brand">current</span> : null}
-                </button>
-              ))}
+              <div className="border-b border-line/70 px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-faint">Connected product</p>
+                <p className="truncate text-[11.5px] text-ink">{shell.host}</p>
+              </div>
+              <a
+                href={`https://${shell.host}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 px-2.5 py-2 text-[11.5px] text-muted hover:bg-raised hover:text-ink"
+              >
+                <ArrowUpRight size={11} /> Open public site
+              </a>
+              <a
+                href={`https://${shell.host}/console`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 px-2.5 py-2 text-[11.5px] text-muted hover:bg-raised hover:text-ink"
+              >
+                <ArrowUpRight size={11} /> Open product console
+              </a>
+              <Link
+                href="/admin/system"
+                className="flex items-center gap-2 border-t border-line/70 px-2.5 py-2 text-[11.5px] text-muted hover:bg-raised hover:text-ink"
+              >
+                <Database size={11} /> Connection diagnostics
+              </Link>
             </div>
           ) : null}
         </div>
 
         <nav className="mt-3 flex-1 overflow-y-auto px-2.5 pb-3">
-          {navSections.map((section) => (
+          {navItems.map((section) => (
             <div key={section.title} className="mb-3">
               <div className="sidebar-label mb-1 px-2 text-[9.5px] font-semibold uppercase tracking-[0.14em] text-faint/80">
                 {section.title}
               </div>
               <div className="space-y-0.5">
                 {section.items.map((item) => {
-                  const active =
-                    item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href);
+                  const active = item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href);
                   const Icon = item.icon;
+                  const badge =
+                    item.href === "/admin/bots" && shell.bots > 0
+                      ? String(shell.bots)
+                      : item.href === "/admin/users" && shell.users > 0
+                        ? String(shell.users)
+                        : undefined;
                   return (
                     <Link
                       key={item.href}
@@ -333,9 +281,7 @@ export function AppShell({
                       title={item.label}
                       className={cn(
                         "nav-item group relative flex items-center gap-2.5 rounded-lg px-2 py-[7px] text-[12.5px] transition-colors",
-                        active
-                          ? "bg-brand/10 text-ink"
-                          : "text-muted hover:bg-raised/70 hover:text-ink",
+                        active ? "bg-brand/10 text-ink" : "text-muted hover:bg-raised/70 hover:text-ink",
                       )}
                     >
                       {active ? (
@@ -343,14 +289,14 @@ export function AppShell({
                       ) : null}
                       <Icon size={15} strokeWidth={2} className={cn("shrink-0", active ? "text-brand" : "text-faint group-hover:text-muted")} />
                       <span className="sidebar-label flex-1 truncate font-medium">{item.label}</span>
-                      {item.badge ? (
+                      {badge ? (
                         <span
                           className={cn(
                             "sidebar-label rounded-full px-1.5 py-px text-[9.5px] font-semibold",
                             active ? "bg-brand/20 text-brand" : "bg-raised text-faint",
                           )}
                         >
-                          {item.badge}
+                          {badge}
                         </span>
                       ) : null}
                     </Link>
@@ -363,18 +309,33 @@ export function AppShell({
 
         <div className="sidebar-extra mx-2.5 mb-2 rounded-lg border border-line/70 bg-gradient-to-br from-[#8b7cff]/10 to-transparent p-2.5">
           <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-faint">
-            <Sparkles size={11} className="text-[#b3a8ff]" /> Fleet capacity
+            <Activity size={11} className="text-[#b3a8ff]" /> Live coverage
           </div>
           <div className="mt-1.5 flex items-baseline justify-between">
-            <span className="text-[15px] font-semibold text-ink">62%</span>
-            <span className="text-[10px] text-faint">of 2M updates</span>
+            <span className="text-[15px] font-semibold text-ink">
+              {shell.live}
+              <span className="text-[11px] font-normal text-faint"> / {shell.bots}</span>
+            </span>
+            <span className="text-[10px] text-faint">{livePct}% live</span>
           </div>
           <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-line">
-            <div className="h-full rounded-full bg-[#8b7cff]" style={{ width: "62%" }} />
+            <div className="h-full rounded-full bg-[#8b7cff]" style={{ width: `${livePct}%` }} />
           </div>
-          <Link href="/admin/revenue" className="mt-2 flex items-center gap-1 text-[10.5px] font-medium text-[#b3a8ff] hover:underline">
-            Upgrade quota <ArrowRight size={10} />
-          </Link>
+          <div className="mt-2 text-[10px] leading-relaxed text-faint">
+            {!shell.connected ? (
+              <span className="flex items-center gap-1 text-[#ff929c]">
+                <TriangleAlert size={9} /> no live data · {shell.status}
+              </span>
+            ) : shell.maintenance ? (
+              <span className="flex items-center gap-1 text-[#f7c66b]">
+                <TriangleAlert size={9} /> maintenance mode on
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-[#4fdfb0]">
+                <CircleCheck size={9} /> serving users normally
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="border-t border-line/70 p-2">
@@ -395,8 +356,8 @@ export function AppShell({
             </button>
             <button
               className="rounded-md p-1.5 text-faint transition-colors hover:bg-raised hover:text-ink"
-              aria-label="Help"
-              onClick={() => push({ kind: "info", title: "Docs", body: "Keyboard: ⌘K palette, / search, T theme." })}
+              aria-label="Keyboard shortcuts"
+              onClick={() => setPaletteOpen(true)}
             >
               <CircleHelp size={14} />
             </button>
@@ -407,23 +368,21 @@ export function AppShell({
               >
                 <Avatar name={me.name} color="#34e0a1" size={26} />
                 <span className="sidebar-label text-left">
-                  <span className="block max-w-[86px] truncate text-[11.5px] font-medium leading-tight text-ink">
-                    {me.name}
-                  </span>
-                  <span className="block text-[9.5px] leading-tight text-faint">owner</span>
+                  <span className="block max-w-[86px] truncate text-[11.5px] font-medium leading-tight text-ink">{me.name}</span>
+                  <span className="block text-[9.5px] leading-tight text-faint">operator</span>
                 </span>
               </button>
               {menu === "user" ? (
-                <div className="absolute bottom-full left-0 z-50 mb-1 w-56 overflow-hidden rounded-lg border border-line bg-panel shadow-pop">
+                <div className="absolute bottom-full left-0 z-50 mb-1 w-60 overflow-hidden rounded-lg border border-line bg-panel shadow-pop">
                   <div className="border-b border-line/80 px-3 py-2">
                     <p className="text-[12px] font-medium text-ink">{me.name}</p>
-                    <p className="text-[10.5px] text-faint">{meEmail} · owner</p>
+                    <p className="text-[10.5px] text-faint">
+                      {me.user} ·{" "}
+                      {me.via === "product" ? "product operator session" : "local fallback session"}
+                    </p>
                   </div>
-                  <Link href="/admin/settings" className="flex items-center gap-2 px-3 py-2 text-[12px] text-muted hover:bg-raised hover:text-ink">
-                    <Settings size={13} /> Workspace settings
-                  </Link>
-                  <Link href="/admin/audit" className="flex items-center gap-2 px-3 py-2 text-[12px] text-muted hover:bg-raised hover:text-ink">
-                    <ShieldCheck size={13} /> Security & audit
+                  <Link href="/admin/system" className="flex items-center gap-2 px-3 py-2 text-[12px] text-muted hover:bg-raised hover:text-ink">
+                    <Database size={13} /> Session & connection
                   </Link>
                   <form action="/api/auth/logout" method="post">
                     <button
@@ -448,7 +407,6 @@ export function AppShell({
         />
       ) : null}
 
-      {/* main */}
       <div className="main-shell flex min-h-screen flex-col">
         <header className="sticky top-0 z-30 border-b border-line/70 bg-canvas/80 backdrop-blur-xl">
           <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
@@ -477,15 +435,28 @@ export function AppShell({
                 className="group hidden items-center gap-2 rounded-lg border border-line bg-raised/40 px-2.5 py-1.5 text-[12px] text-faint transition-colors hover:border-faint/50 hover:text-muted sm:flex"
               >
                 <Search size={13} />
-                <span className="w-28 text-left">Search console…</span>
+                <span className="w-28 text-left">Go to…</span>
                 <span className="flex items-center gap-0.5 rounded border border-line bg-canvas px-1 py-px text-[9.5px]">
                   <Command size={8} /> K
                 </span>
               </button>
 
-              <div className="hidden items-center gap-1.5 rounded-full border border-[#34e0a1]/25 bg-[#34e0a1]/[0.07] px-2 py-1 text-[10.5px] font-medium text-[#5eeac0] lg:flex">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#34e0a1] live-dot" />
-                All systems operational
+              <div
+                className={cn(
+                  "hidden items-center gap-1.5 rounded-full border px-2 py-1 text-[10.5px] font-medium lg:flex",
+                  shell.connected
+                    ? "border-[#34e0a1]/25 bg-[#34e0a1]/[0.07] text-[#5eeac0]"
+                    : "border-[#ff5d6c]/25 bg-[#ff5d6c]/[0.07] text-[#ff929c]",
+                )}
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full", shell.connected ? "bg-[#34e0a1] live-dot" : "bg-[#ff5d6c]")} />
+                {shell.connected
+                  ? `product reachable · ${shell.storage}`
+                  : shell.status === "unlinked"
+                    ? "session not linked to product"
+                    : shell.status === "unauthorized"
+                      ? "product rejected the session"
+                      : "product unreachable"}
               </div>
 
               <div className="hidden items-center gap-1.5 font-mono text-[10.5px] text-faint xl:flex">
@@ -496,27 +467,29 @@ export function AppShell({
                 <button
                   onClick={() => setMenu(menu === "bell" ? "none" : "bell")}
                   className="relative rounded-lg border border-line bg-raised/40 p-1.5 text-muted transition-colors hover:text-ink"
-                  aria-label="Notifications"
+                  aria-label="Alerts"
                 >
                   <Bell size={14} />
-                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#ff5d6c] text-[8px] font-bold text-white">
-                    4
-                  </span>
+                  {shell.alerts.length > 0 ? (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#ff5d6c] text-[8px] font-bold text-white">
+                      {shell.alerts.length}
+                    </span>
+                  ) : null}
                 </button>
                 {menu === "bell" ? (
                   <div className="absolute right-0 top-full z-50 mt-2 w-[320px] overflow-hidden rounded-xl border border-line bg-panel shadow-pop">
                     <div className="flex items-center justify-between border-b border-line/80 px-3 py-2">
-                      <span className="text-[12px] font-medium text-ink">Notifications</span>
-                      <button
-                        onClick={() => push({ kind: "success", title: "All notifications marked read" })}
-                        className="text-[10.5px] text-faint hover:text-ink"
-                      >
-                        Mark all read
-                      </button>
+                      <span className="text-[12px] font-medium text-ink">Alerts</span>
+                      <span className="text-[10px] text-faint">{shell.alerts.length} from live data</span>
                     </div>
-                    {notifications.map((n) => (
+                    {shell.alerts.length === 0 ? (
+                      <p className="px-3 py-6 text-center text-[11px] text-faint">
+                        Nothing needs attention — no errored bots, no suspended accounts, maintenance off.
+                      </p>
+                    ) : null}
+                    {shell.alerts.map((n) => (
                       <Link
-                        key={n.title}
+                        key={n.title + n.detail}
                         href={n.href}
                         onClick={() => setMenu("none")}
                         className="flex gap-2.5 border-b border-line/60 px-3 py-2.5 transition-colors last:border-0 hover:bg-raised/60"
@@ -524,19 +497,23 @@ export function AppShell({
                         <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: n.tone }} />
                         <span className="min-w-0">
                           <span className="block truncate text-[11.5px] font-medium text-ink">{n.title}</span>
-                          <span className="block truncate text-[10.5px] text-faint">{n.body}</span>
+                          <span className="block truncate text-[10.5px] text-faint">{n.detail}</span>
                         </span>
-                        <span className="ml-auto shrink-0 text-[9.5px] text-faint">{n.time}</span>
                       </Link>
                     ))}
                   </div>
                 ) : null}
               </div>
 
-              <Link href="/admin/bots?new=1" className="btn-primary h-[30px] px-2.5 text-[12px]">
-                <Plus size={13} strokeWidth={2.6} />
-                <span className="hidden sm:inline">Deploy bot</span>
-              </Link>
+              <a
+                href={`https://${shell.host}/console`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-primary h-[30px] px-2.5 text-[12px]"
+              >
+                <ArrowUpRight size={13} strokeWidth={2.6} />
+                <span className="hidden sm:inline">Product console</span>
+              </a>
             </div>
           </div>
         </header>
@@ -549,29 +526,28 @@ export function AppShell({
         <footer className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-line/70 px-4 py-3 text-[10.5px] text-faint lg:px-7">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
-              <span className="h-1 w-1 rounded-full bg-brand" /> botforge-cloud · production
+              <span className={cn("h-1 w-1 rounded-full", shell.connected ? "bg-brand" : "bg-[#ff5d6c]")} /> {shell.host}
             </span>
-            <span className="hidden sm:inline">build 2026.10.29 · vercel iad1</span>
+            <span className="hidden sm:inline">botforge admin · live data only</span>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/admin/health" className="hover:text-muted">
-              Status
+            <Link href="/admin/system" className="hover:text-muted">
+              Diagnostics
             </Link>
-            <Link href="/admin/settings" className="hover:text-muted">
-              Docs
-            </Link>
+            <a href={`https://${shell.host}/api/health`} target="_blank" rel="noreferrer" className="hover:text-muted">
+              Product health
+            </a>
             <span className="flex items-center gap-1">
-              <LifeBuoy size={10} /> support@botforge.cloud
+              <RefreshCw size={10} /> figures refresh on every page load
             </span>
           </div>
         </footer>
       </div>
 
-      {/* command palette */}
       {paletteOpen ? (
         <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/60 p-4 pt-[12vh] backdrop-blur-sm" onClick={() => setPaletteOpen(false)}>
           <div
-            className="w-full max-w-[540px] animate-rise overflow-hidden rounded-xl border border-line bg-panel shadow-pop"
+            className="w-full max-w-[520px] animate-rise overflow-hidden rounded-xl border border-line bg-panel shadow-pop"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2 border-b border-line/80 px-3.5 py-3">
@@ -584,69 +560,35 @@ export function AppShell({
                   setCursor(0);
                 }}
                 onKeyDown={onPaletteKey}
-                placeholder="Jump to a page, run an action…"
+                placeholder="Jump to a page…"
                 className="w-full bg-transparent text-[13px] text-ink outline-none placeholder:text-faint"
               />
               <span className="rounded border border-line bg-raised px-1.5 py-0.5 text-[10px] text-faint">esc</span>
             </div>
-            <div className="max-h-[52vh] overflow-y-auto p-1.5">
-              {flatResults.length === 0 ? (
-                <p className="px-3 py-8 text-center text-[12px] text-faint">No matches for “{query}”</p>
-              ) : null}
-              {results.navMatches.length ? (
-                <div className="mb-1">
-                  <div className="px-2 py-1 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-faint">Pages</div>
-                  {results.navMatches.map((r) => {
-                    const idx = flatResults.findIndex((f) => f.href === r.href && f.label === r.label);
-                    const Icon = r.icon;
-                    return (
-                      <button
-                        key={r.href}
-                        onMouseEnter={() => setCursor(idx)}
-                        onClick={() => {
-                          router.push(r.href);
-                          setPaletteOpen(false);
-                        }}
-                        className={cn(
-                          "flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[12.5px] transition-colors",
-                          cursor === idx ? "bg-brand/10 text-ink" : "text-muted hover:bg-raised",
-                        )}
-                      >
-                        <Icon size={14} className={cursor === idx ? "text-brand" : "text-faint"} />
-                        <span className="flex-1">{r.label}</span>
-                        <span className="text-[10px] text-faint">{r.hint}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-              {results.actionMatches.length ? (
-                <div>
-                  <div className="px-2 py-1 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-faint">Actions</div>
-                  {results.actionMatches.map((r) => {
-                    const idx = flatResults.findIndex((f) => f.href === r.href && f.label === r.label);
-                    const Icon = r.icon;
-                    return (
-                      <button
-                        key={r.label}
-                        onMouseEnter={() => setCursor(idx)}
-                        onClick={() => {
-                          router.push(r.href);
-                          setPaletteOpen(false);
-                        }}
-                        className={cn(
-                          "flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[12.5px] transition-colors",
-                          cursor === idx ? "bg-brand/10 text-ink" : "text-muted hover:bg-raised",
-                        )}
-                      >
-                        <Icon size={14} className={cursor === idx ? "text-brand" : "text-faint"} />
-                        <span className="flex-1">{r.label}</span>
-                        <ArrowRight size={11} className="text-faint" />
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
+            <div className="max-h-[46vh] overflow-y-auto p-1.5">
+              {results.length === 0 ? <p className="px-3 py-8 text-center text-[12px] text-faint">No matches</p> : null}
+              {results.map((r, i) => {
+                const Icon = r.icon;
+                return (
+                  <button
+                    key={r.href}
+                    onMouseEnter={() => setCursor(i)}
+                    onClick={() => {
+                      router.push(r.href);
+                      setPaletteOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[12.5px] transition-colors",
+                      cursor === i ? "bg-brand/10 text-ink" : "text-muted hover:bg-raised",
+                    )}
+                  >
+                    <Icon size={14} className={cursor === i ? "text-brand" : "text-faint"} />
+                    <span className="flex-1">{r.label}</span>
+                    <span className="text-[10px] text-faint">{r.hint}</span>
+                    <ArrowRight size={11} className="text-faint" />
+                  </button>
+                );
+              })}
             </div>
             <div className="flex items-center gap-3 border-t border-line/80 px-3.5 py-2 text-[10px] text-faint">
               <span className="flex items-center gap-1">
@@ -656,15 +598,11 @@ export function AppShell({
               <span className="flex items-center gap-1">
                 <span className="rounded border border-line bg-raised px-1">↵</span> open
               </span>
-              <span className="ml-auto">BotForge command menu</span>
+              <span className="ml-auto">{shell.bots} bots · {shell.users} accounts</span>
             </div>
           </div>
         </div>
       ) : null}
     </div>
   );
-}
-
-export function ShellHint() {
-  return null;
 }

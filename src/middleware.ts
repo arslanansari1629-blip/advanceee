@@ -7,7 +7,7 @@ import { SESSION_COOKIE, readSession, isAuthConfigured } from "@/lib/auth";
  * - `/admin/*`      -> redirect to /login?next=…
  * - `/api/admin/*`  -> 401 JSON
  *
- * `/api/tg/*` (the Telegram webhook) and `/login` stay public on purpose.
+ * `/login` and `/api/health` stay public on purpose.
  */
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;

@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "BotForge Admin — Fleet control",
+  title: "BotForge Admin — Live operator console",
   description:
-    "Advanced admin console for BotForge Cloud: bots, live logs, revenue, users, feature flags and system health.",
+    "Operator console for the live BotForge Cloud product: bots, accounts, platform flags, engine and connection diagnostics. Every figure is read from the product API.",
 };
 
 export const viewport: Viewport = {

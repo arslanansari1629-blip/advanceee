@@ -5,7 +5,7 @@ import { TriangleAlert } from "lucide-react";
 
 export default function AdminError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
-    // In production this would go to the error reporter (Sentry / Axiom).
+    // Surfaced in the server logs; the console has no third-party error sink.
     console.error("admin console error", error);
   }, [error]);
 
@@ -16,7 +16,7 @@ export default function AdminError({ error, reset }: { error: Error & { digest?:
       </span>
       <h1 className="mt-1 text-[15px] font-semibold text-ink">This view crashed</h1>
       <p className="max-w-md text-[12px] text-faint">
-        {error.message || "An unexpected error occurred while rendering the console."}
+        {error.message || "An unexpected error occurred while rendering live product data."}
         {error.digest ? <span className="ml-1 font-mono text-[10.5px]">({error.digest})</span> : null}
       </p>
       <button onClick={reset} className="btn-primary mt-3 h-8 text-[11.5px]">

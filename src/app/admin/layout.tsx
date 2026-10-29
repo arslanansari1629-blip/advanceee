@@ -1,16 +1,21 @@
-import { cookies } from "next/headers";
 import { AppShell } from "@/components/app-shell";
 import { ToastProvider } from "@/components/toast";
-import { SESSION_COOKIE, readSession } from "@/lib/auth";
+import { getSession, loadAdminState } from "@/lib/session";
+import { shellFrom } from "@/lib/shell";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const session = await readSession(cookies().get(SESSION_COOKIE)?.value);
+  const [session, state] = await Promise.all([getSession(), loadAdminState()]);
 
   return (
     <ToastProvider>
-      <AppShell admin={session ? { user: session.user, name: session.name } : undefined}>{children}</AppShell>
+      <AppShell
+        admin={session ? { user: session.user, name: session.name, via: session.via } : undefined}
+        shell={shellFrom(state)}
+      >
+        {children}
+      </AppShell>
     </ToastProvider>
   );
 }

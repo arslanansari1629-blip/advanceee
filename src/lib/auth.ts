@@ -19,10 +19,14 @@ export const SESSION_TTL_SECONDS = 60 * 60 * 12;
 export const SESSION_TTL_REMEMBER_SECONDS = 60 * 60 * 24 * 7;
 
 export type Session = {
-  /** username as configured in ADMIN_USERNAME */
+  /** operator username */
   user: string;
   /** display name shown in the console */
   name: string;
+  /** product operator token (bf_operator) used to read live data */
+  op?: string;
+  /** how this session was established */
+  via: "product" | "local";
   iat: number;
   exp: number;
 };
@@ -91,12 +95,20 @@ export function verifyCredentials(username: string, password: string): boolean {
   return userOk && passOk;
 }
 
-export async function createSession(username: string, remember = false): Promise<{ token: string; maxAge: number }> {
+export async function createSession(
+  username: string,
+  remember = false,
+  opts: { operatorToken?: string; via?: "product" | "local" } = {},
+): Promise<{ token: string; maxAge: number }> {
   const now = Math.floor(Date.now() / 1000);
+  // The product operator token lives 12h, so a signed-in console never claims
+  // more than that unless the product session can still be verified.
   const maxAge = remember ? SESSION_TTL_REMEMBER_SECONDS : SESSION_TTL_SECONDS;
   const payload: Session = {
     user: username,
     name: credentials().name || username,
+    op: opts.operatorToken,
+    via: opts.via ?? "local",
     iat: now,
     exp: now + maxAge,
   };
