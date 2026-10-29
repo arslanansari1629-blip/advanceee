@@ -150,8 +150,8 @@ export default async function BotDetailPage({ params }: { params: { id: string }
                   icon: <KeyRound size={11} />,
                 },
                 { label: "Bot id", value: <Mono>{bot.id}</Mono>, icon: <ShieldCheck size={11} /> },
-                { label: "Created", value: `${dateAt(bot.createdAt)} · ${stampUTC(bot.createdAt)}`, icon: <Clock size={11} /> },
-                { label: "Started", value: bot.startedAt ? `${dateAt(bot.startedAt)} · ${stampUTC(bot.startedAt)}` : "never", icon: <Clock size={11} /> },
+                { label: "Created", value: `${dateAt(bot.createdAt)} · ${new Date(bot.createdAt).toISOString().slice(11, 16)}Z`, icon: <Clock size={11} /> },
+                { label: "Started", value: bot.startedAt ? `${dateAt(bot.startedAt)} · ${new Date(bot.startedAt).toISOString().slice(11, 16)}Z` : "never", icon: <Clock size={11} /> },
               ].map((row) => (
                 <div key={row.label} className="bg-panel p-3.5">
                   <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.08em] text-faint">

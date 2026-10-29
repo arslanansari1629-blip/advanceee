@@ -26,15 +26,20 @@ browser ──cookie──▶ this console (Vercel) ──bf_operator──▶ B
    console's own HMAC-signed session cookie — the product password is never stored here.
 2. Every server render calls `GET {product}/api/admin/data` with that token (`src/lib/product.ts`,
    `src/lib/session.ts`, deduped with React `cache()`), and renders the payload directly.
-3. `POST /api/admin/settings` proxies the four platform flags straight to the product and returns
+3. If the product rejects the typed credentials but they are valid for this console, the deployment
+   mints its own operator token from `BOTFORGE_OPERATOR_USERNAME` / `_PASSWORD` — same read-only
+   access, so live data keeps flowing.
+4. `POST /api/admin/settings` proxies the four platform flags straight to the product and returns
    whatever the product confirms.
-4. If the product is unreachable, rejects the session, or a page has no data, the console shows
+5. If the product is unreachable, rejects the session, or a page has no data, the console shows
    that state (`src/components/connection-state.tsx`) instead of inventing numbers.
 
 | Variable | Purpose |
 | --- | --- |
 | `BOTFORGE_API_URL` | Base URL of the live product (defaults to `https://botforge-cloud.vercel.app`) |
-| `ADMIN_USERNAME` | Optional fallback login if the product itself is down |
+| `BOTFORGE_OPERATOR_USERNAME` | Product operator username this deployment mints a token with (defaults to `ADMIN_USERNAME`) |
+| `BOTFORGE_OPERATOR_PASSWORD` | Product operator password (defaults to `ADMIN_PASSWORD`) |
+| `ADMIN_USERNAME` | Console login (fallback if the product itself is down) |
 | `ADMIN_PASSWORD` | Optional fallback password |
 | `ADMIN_DISPLAY_NAME` | Optional friendly name in the sidebar |
 | `ADMIN_SESSION_SECRET` | Signs `bf_admin_session`; `openssl rand -hex 32` |

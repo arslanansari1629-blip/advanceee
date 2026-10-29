@@ -104,14 +104,27 @@ export async function POST(request: Request) {
       operatorToken = attempt.token;
       via = "product";
     } else if (attempt.reason === "invalid") {
-      registerFailure(ip);
-      if (wantsJson) {
-        return NextResponse.json({ error: "invalid_credentials", detail: "Wrong username or password." }, { status: 401 });
+      // The product rejected what was typed. That is only fatal if it is also
+      // wrong for this console: the operator credential configured on this
+      // deployment (BOTFORGE_OPERATOR_USERNAME / _PASSWORD) can still mint a
+      // product session, so live data keeps flowing.
+      productProblem = "the product rejected the typed credentials";
+      if (!verifyCredentials(username, password)) {
+        registerFailure(ip);
+        if (wantsJson) {
+          return NextResponse.json({ error: "invalid_credentials", detail: "Wrong username or password." }, { status: 401 });
+        }
+        const url = publicUrl(request, "/login");
+        url.searchParams.set("e", "1");
+        if (next !== "/admin") url.searchParams.set("next", next);
+        return NextResponse.redirect(url, { status: 303 });
       }
-      const url = publicUrl(request, "/login");
-      url.searchParams.set("e", "1");
-      if (next !== "/admin") url.searchParams.set("next", next);
-      return NextResponse.redirect(url, { status: 303 });
+      const serviceToken = await getServiceToken();
+      if (serviceToken) {
+        operatorToken = serviceToken;
+        via = "product";
+        productProblem = null;
+      }
     } else {
       // Product down or misconfigured: fall back to local credentials only.
       productProblem = attempt.detail ?? attempt.reason;
