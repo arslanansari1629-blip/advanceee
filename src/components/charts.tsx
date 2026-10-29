@@ -336,6 +336,9 @@ export function Heatmap({
   columns?: number;
 }) {
   const [tip, setTip] = useState<{ i: number; x: number } | null>(null);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
   return (
     <div className="relative">
       <div
@@ -344,7 +347,7 @@ export function Heatmap({
         onMouseLeave={() => setTip(null)}
       >
         {values.map((v, i) => {
-          const op = Math.max(0.12, Math.min(1, v));
+          const op = 0.14 + ((v - min) / range) * 0.86;
           return (
             <div
               key={i}
