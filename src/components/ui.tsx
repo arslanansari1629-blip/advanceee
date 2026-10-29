@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn, initials } from "@/lib/format";
-import type { ProductBotStatus } from "@/lib/types";
+import type { BotStatusValue, ProductBotStatus } from "@/lib/types";
 
 /* ---------------------------------------------------------------- chips */
 
@@ -13,8 +13,17 @@ const statusStyles: Record<ProductBotStatus, { label: string; cls: string; dot: 
   deploying: { label: "Deploying", cls: "text-[#8b7cff] bg-[#8b7cff]/10 border-[#8b7cff]/25", dot: "#8b7cff" },
 };
 
-export function StatusBadge({ status, pulse = false }: { status: ProductBotStatus; pulse?: boolean }) {
-  const s = statusStyles[status];
+export function StatusBadge({ status, pulse = false }: { status: BotStatusValue; pulse?: boolean }) {
+  const s = statusStyles[status as ProductBotStatus];
+  if (!s) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium text-muted">
+        <span className="h-1.5 w-1.5 rounded-full bg-[#7c879e]" />
+        {status || "unknown"}
+      </span>
+    );
+  }
+
   return (
     <span
       className={cn(

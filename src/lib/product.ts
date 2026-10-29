@@ -134,8 +134,126 @@ export async function probeOperatorLogin(): Promise<OperatorProbe> {
   return result.reason === "invalid" ? "rejected" : "unreachable";
 }
 
-export function fetchAdminData(token: string) {
-  return operatorFetch<import("./types").AdminData>("/api/admin/data", token);
+/* ---------------------------------------------------------------- shape */
+
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : Number(v) || 0);
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+const bool = (v: unknown, fallback = false) => (typeof v === "boolean" ? v : fallback);
+
+/**
+ * Accepts the product payload and returns it in the shape the console renders.
+ *
+ * Nothing is invented: missing counters are *derived* from the rows the product
+ * did send, and anything genuinely absent becomes "unknown"/0 rather than a
+ * guess. A payload without bot/user rows is rejected so the console can show a
+ * real error instead of an empty-looking lie.
+ */
+export function normaliseAdminData(raw: unknown): { data: import("./types").AdminData } | { error: string } {
+  if (!raw || typeof raw !== "object") return { error: "the product answered with something that is not an object" };
+  const r = raw as Record<string, unknown>;
+  const keys = Object.keys(r);
+  if (!Array.isArray(r.bots)) return { error: `payload has no bots[] array (keys: ${keys.join(", ") || "none"})` };
+  if (!Array.isArray(r.users)) return { error: `payload has no users[] array (keys: ${keys.join(", ") || "none"})` };
+
+  const bots = (r.bots as unknown[]).map((item) => {
+    const b = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+    const statsRaw = (b.stats && typeof b.stats === "object" ? b.stats : {}) as Record<string, unknown>;
+    return {
+      id: str(b.id),
+      name: str(b.name) || str(b.id) || "unnamed bot",
+      status: str(b.status) || "unknown",
+      username: b.username ? str(b.username) : null,
+      framework: str(b.framework),
+      entry: str(b.entry),
+      requirements: str(b.requirements),
+      restartCount: num(b.restartCount),
+      autoRestart: bool(b.autoRestart),
+      startedAt: b.startedAt ? num(b.startedAt) : null,
+      createdAt: num(b.createdAt),
+      lastError: b.lastError ? str(b.lastError) : null,
+      tokenMasked: b.tokenMasked ? str(b.tokenMasked) : null,
+      updates: num(b.updates),
+      replies: num(b.replies),
+      ownerId: str(b.ownerId),
+      ownerEmail: str(b.ownerEmail),
+      ownerName: str(b.ownerName),
+      stats: {
+        uptimePct: num(statsRaw.uptimePct),
+        cpu: num(statsRaw.cpu),
+        memMB: num(statsRaw.memMB),
+      },
+    };
+  });
+
+  const users = (r.users as unknown[]).map((item) => {
+    const u = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+    return {
+      id: str(u.id),
+      name: str(u.name),
+      email: str(u.email),
+      plan: str(u.plan) || "free",
+      createdAt: num(u.createdAt),
+      bots: num(u.bots),
+      live: num(u.live),
+      updates: num(u.updates),
+    };
+  });
+
+  const rawStats = (r.stats && typeof r.stats === "object" ? r.stats : {}) as Record<string, unknown>;
+  const countStatus = (status: string) => bots.filter((b) => b.status === status).length;
+  const stats = {
+    users: rawStats.users !== undefined ? num(rawStats.users) : users.length,
+    bots: rawStats.bots !== undefined ? num(rawStats.bots) : bots.length,
+    live: rawStats.live !== undefined ? num(rawStats.live) : countStatus("live"),
+    drafts: rawStats.drafts !== undefined ? num(rawStats.drafts) : countStatus("draft"),
+    paused: rawStats.paused !== undefined ? num(rawStats.paused) : countStatus("paused"),
+    errors: rawStats.errors !== undefined ? num(rawStats.errors) : countStatus("error"),
+    updates: rawStats.updates !== undefined ? num(rawStats.updates) : bots.reduce((n, b) => n + b.updates, 0),
+    replies: rawStats.replies !== undefined ? num(rawStats.replies) : bots.reduce((n, b) => n + b.replies, 0),
+    restarts: rawStats.restarts !== undefined ? num(rawStats.restarts) : bots.reduce((n, b) => n + b.restartCount, 0),
+    packages:
+      rawStats.packages !== undefined
+        ? num(rawStats.packages)
+        : bots.reduce((n, b) => n + b.requirements.split(/[\n,]+/).filter((x) => x.trim()).length, 0),
+    suspended:
+      rawStats.suspended !== undefined ? num(rawStats.suspended) : users.filter((u) => u.plan === "suspended").length,
+  };
+
+  if (!r.settings || typeof r.settings !== "object") {
+    return { error: `payload has no settings object (keys: ${keys.join(", ") || "none"})` };
+  }
+  const settingsRaw = r.settings as Record<string, unknown>;
+  const settings = {
+    id: settingsRaw.id ? str(settingsRaw.id) : undefined,
+    maintenance: bool(settingsRaw.maintenance),
+    maintenanceMessage: str(settingsRaw.maintenanceMessage),
+    broadcast: str(settingsRaw.broadcast),
+    signupsOpen: bool(settingsRaw.signupsOpen, true),
+    updatedAt: settingsRaw.updatedAt ? num(settingsRaw.updatedAt) : undefined,
+  };
+
+  const engineRaw = (r.engine && typeof r.engine === "object" ? r.engine : {}) as Record<string, unknown>;
+
+  return {
+    data: {
+      storage: str(r.storage) || "unknown",
+      engine: { mode: str(engineRaw.mode) || "unknown", online: bool(engineRaw.online) },
+      settings,
+      stats,
+      users,
+      bots,
+    },
+  };
+}
+
+export async function fetchAdminData(
+  token: string,
+): Promise<ProductResult<import("./types").AdminData>> {
+  const result = await operatorFetch<unknown>("/api/admin/data", token);
+  if (!result.ok) return result;
+  const parsed = normaliseAdminData(result.data);
+  if ("error" in parsed) return { ok: false, reason: "unreachable", detail: parsed.error };
+  return { ok: true, data: parsed.data, latencyMs: result.latencyMs };
 }
 
 export function fetchProductHealth() {

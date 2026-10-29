@@ -8,10 +8,17 @@
 
 export type ProductBotStatus = "live" | "draft" | "paused" | "deploying" | "error";
 
+/**
+ * Status strings are passed through from the product untouched. The console
+ * renders any value it does not recognise as a neutral badge instead of
+ * inventing a state.
+ */
+export type BotStatusValue = string;
+
 export interface ProductBot {
   id: string;
   name: string;
-  status: ProductBotStatus;
+  status: BotStatusValue;
   username: string | null;
   framework: string;
   entry: string;

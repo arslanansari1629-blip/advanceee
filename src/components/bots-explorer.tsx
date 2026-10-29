@@ -15,13 +15,13 @@ import {
   Search,
   Users,
 } from "lucide-react";
-import type { ProductBot, ProductBotStatus } from "@/lib/types";
+import type { ProductBot } from "@/lib/types";
 import { cn, fmt, pct, since, timeAgo } from "@/lib/format";
 import { EmptyState, PlanBadge, StatusBadge } from "./ui";
 
 type SortKey = "updates" | "replies" | "restarts" | "created" | "name";
 
-const statuses: Array<{ key: "all" | ProductBotStatus; label: string }> = [
+const statuses: Array<{ key: string; label: string }> = [
   { key: "all", label: "All" },
   { key: "live", label: "Live" },
   { key: "draft", label: "Draft" },
@@ -44,7 +44,7 @@ export function BotsExplorer({
   const router = useRouter();
   const params = useSearchParams();
   const [query, setQuery] = useState(params.get("q") ?? "");
-  const [status, setStatus] = useState<"all" | ProductBotStatus>((params.get("status") as ProductBotStatus) || "all");
+  const [status, setStatus] = useState<string>(params.get("status") ?? "all");
   const [framework, setFramework] = useState(params.get("framework") ?? "all");
   const [sort, setSort] = useState<SortKey>("updates");
   const [desc, setDesc] = useState(true);

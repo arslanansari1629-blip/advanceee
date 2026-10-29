@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { PRODUCT_BASE, fetchProductHealth, isProductConfigured, probeOperatorLogin } from "@/lib/product";
+import { PRODUCT_BASE, fetchAdminData, fetchProductHealth, getServiceToken, isProductConfigured, probeOperatorLogin } from "@/lib/product";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +14,23 @@ export async function GET() {
 
   const started = Date.now();
   const [result, operatorLogin] = await Promise.all([fetchProductHealth(), probeOperatorLogin()]);
+
+  // Does the *operator* payload still have the shape the console renders?
+  // Only the verdict is reported here — never a count, row or token.
+  let operatorPayload: "ok" | "unauthorized" | "unreachable" | "unrecognised" | "skipped" = "skipped";
+  if (operatorLogin === "accepted") {
+    const token = await getServiceToken();
+    if (token) {
+      const data = await fetchAdminData(token);
+      operatorPayload = data.ok
+        ? "ok"
+        : data.reason === "unauthorized"
+          ? "unauthorized"
+          : data.detail?.includes("payload")
+            ? "unrecognised"
+            : "unreachable";
+    }
+  }
   const latencyMs = Date.now() - started;
 
   return NextResponse.json(
@@ -30,6 +47,7 @@ export async function GET() {
         // Does this deployment's configured operator credential work on the
         // product? Booleans only — no credentials, tokens or counts leak here.
         operator_login: operatorLogin,
+        operator_payload: operatorPayload,
       },
       time: new Date().toISOString(),
     },
